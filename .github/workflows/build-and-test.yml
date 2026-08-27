@@ -10,4 +10,10 @@ on:
 jobs:
   build-and-test:
     uses: GTNewHorizons/GTNH-Actions-Workflows/.github/workflows/build-and-test.yml@master
+    with:
+      # 本 mod 是纯编译验证（移植项目，无服务器集成测试条件）：
+      # - client-only: 不启动 runServer（避免无 AE2 网格环境的 90 秒服务器运行步骤）
+      # - disable-spotless-pr: 项目已禁用 codeStyle 模块，避免 CI 自动提 spotless PR
+      client-only: true
+      disable-spotless-pr: true
     secrets: inherit
