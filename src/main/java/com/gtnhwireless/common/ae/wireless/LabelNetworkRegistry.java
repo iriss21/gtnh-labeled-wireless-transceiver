@@ -137,6 +137,10 @@ public class LabelNetworkRegistry extends WorldSavedData {
         LabelKey key = new LabelKey(dim, label, owner);
         LabelNetwork net = networks.remove(key);
         if (net != null) {
+            // v0.4.2：先置“已删除”标记再销毁节点。任何仍持有该网络对象引用的
+            // LabelLink（漏网的已加载 tile 等）在下一 tick 看到标记后会立即断开，
+            // 不会因 ensureVirtualNode() 把已删除频道“复活”。
+            net.deleted = true;
             net.destroyVirtualNode();
             markDirty();
             return true;
@@ -322,6 +326,12 @@ public class LabelNetworkRegistry extends WorldSavedData {
         final long channel;
         final Set<EndpointRef> endpoints = new HashSet<>();
 
+        /**
+         * 网络是否已被删除（v0.4.2）。removeNetwork 会先置位再销毁虚拟枢纽；
+         * 仍引用本对象的 LabelLink 据此判定目标已失效并立即断开，防止频道复活。
+         */
+        volatile boolean deleted;
+
         VirtualLabelNodeHost virtualHost;
 
         LabelNetwork(int dim, String label, UUID owner, long channel) {
@@ -341,7 +351,12 @@ public class LabelNetworkRegistry extends WorldSavedData {
 
         /** 虚拟枢纽节点是否有效（存在且世界对象有效）。无效时由 {@link #ensureVirtualNode()} 重建。 */
         public boolean isNodeValid() {
-            return virtualHost != null && virtualHost.isNodeValid();
+            return !deleted && virtualHost != null && virtualHost.isNodeValid();
+        }
+
+        /** 网络是否已被删除（v0.4.2）。删除后不可再用于连接，LabelLink 会立即断开。 */
+        public boolean isDeleted() {
+            return deleted;
         }
 
         public int endpointCount() {
@@ -350,6 +365,8 @@ public class LabelNetworkRegistry extends WorldSavedData {
 
         /** 确保虚拟枢纽节点存在；维度未加载时返回 false，待维度加载后由收发器重试。 */
         public boolean ensureVirtualNode() {
+            // v0.4.2：已删除的网络禁止重建虚拟枢纽（任何路径都不能让删除的频道复活）。
+            if (deleted) return false;
             if (virtualHost != null && virtualHost.getProxy().getNode() != null && virtualHost.isNodeValid()) {
                 return true;
             }
