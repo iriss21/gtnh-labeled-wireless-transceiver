@@ -44,6 +44,13 @@ public class LabelLink {
             destroyConnection();
             return;
         }
+        // v0.4.2：目标网络已被删除（removeNetwork 置位 deleted）——立即断开并清空引用，
+        // 绝不触发 ensureVirtualNode() 把已删除的频道“复活”。
+        if (target.isDeleted()) {
+            this.target = null;
+            destroyConnection();
+            return;
+        }
 
         IGridNode hostNode = host.getGridNode();
         IGridNode targetNode = target.node();
