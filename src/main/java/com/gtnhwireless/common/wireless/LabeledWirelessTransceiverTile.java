@@ -66,7 +66,14 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
         syncToClient();
     }
 
-    public void refreshLabel(boolean ensureRegister) {
+    /**
+     * 恢复标签链路（节点就绪 / chunk 重载 / 服务器启动后调用）。
+     *
+     * v0.4.2 起只“查”不“建”：网络存在则重连；网络不存在（已被删除、或从未创建）
+     * 则清空标签彻底断开。此前用 register 兜底注册，导致删除频道后，未加载区块中的
+     * 收发器在重载时通过本方法把已删除的频道“复活”（register 在网络不存在时会新建网络）。
+     */
+    public void refreshLabel() {
         if (worldObj == null || worldObj.isRemote) return;
         if (labelForDisplay == null || labelForDisplay.isEmpty()) {
             this.frequency = 0L;
@@ -75,17 +82,15 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
             return;
         }
         LabelNetworkRegistry reg = LabelNetworkRegistry.get(worldObj);
-        LabelNetworkRegistry.LabelNetwork net = ensureRegister
-                ? reg.register(worldObj, labelForDisplay, placerId, this)
-                : reg.getNetwork(worldObj, labelForDisplay, placerId);
+        LabelNetworkRegistry.LabelNetwork net = reg.getNetwork(worldObj, labelForDisplay, placerId);
         if (net == null) {
-            this.frequency = 0L;
-            this.labelLink.clearTarget();
-        } else {
-            net.ensureVirtualNode();
-            this.frequency = net.channel();
-            this.labelLink.setTarget(net);
+            // 网络已不存在：彻底断开并清空标签（删除频道后未加载收发器重载时走到这里）。
+            clearLabel();
+            return;
         }
+        net.ensureVirtualNode();
+        this.frequency = net.channel();
+        this.labelLink.setTarget(net);
         updateState();
         saveChanges();
         syncToClient();
@@ -93,7 +98,7 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
 
     @Override
     protected void onWirelessReady() {
-        refreshLabel(true);
+        refreshLabel();
     }
 
     @Override
@@ -115,6 +120,13 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     /** 断线重试冷却：目标枢纽节点失效（世界卸载清理）后周期性重建，避免每 tick 重试。 */
     private int reconnectCooldown;
 
+    /**
+     * 状态检查节流计数器（v0.4.2 TPS 优化）：方块 meta（连接指示材质）不需要每 tick
+     * 全量重查网格能量——每 5 tick 或链路翻转时刷新一次，把每端点的网格查询从
+     * 20 次/秒 降到 4 次/秒；连接翻转时仍立即更新，材质响应无感知延迟。
+     */
+    private int stateTimer;
+
     @Override
     public void wirelessTick() {
         if (worldObj == null || worldObj.isRemote) return;
@@ -122,6 +134,7 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
 
         this.labelLink.updateStatus();
         boolean connected = this.labelLink.isConnected();
+        boolean flipped = connected != wasConnected;
         if (connected && !wasConnected) {
             // 链路刚建立：可能发生在初次接入、chunk 重载重连、或跨维度网格分裂-合并之后。
             // 分裂-合并往返中 GridStorageCache 的存储缓存可能残留陈旧状态（AE2 rv3 的
@@ -139,10 +152,19 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
                 net.ensureVirtualNode();
                 this.frequency = net.channel();
                 this.labelLink.setTarget(net);
+            } else {
+                // v0.4.2：网络已被删除（register 不再自动重建，见 refreshLabel）——
+                // 自动重连无意义，清空标签彻底断开，避免残留“有标签但连不上”的中间态。
+                clearLabel();
             }
         }
         wasConnected = connected;
-        updateState();
+
+        // TPS 节流：非翻转状态下每 5 tick 才重查一次方块状态；翻转立即刷新。
+        if (flipped || ++stateTimer >= 5) {
+            stateTimer = 0;
+            updateState();
+        }
     }
 
     /** 触发所在网格的存储缓存全量自愈（置空 handler + 重评全部 cell provider + 监视器强刷）。 */
