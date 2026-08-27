@@ -1,0 +1,15 @@
+# GTNH Labeled Wireless Transceiver - 简体中文
+
+# 物品 / 方块名称
+tile.gtnhlabeledwireless.labeled_wireless_transceiver.name=标签无线收发器
+gtnhlabeledwireless.labeled_wireless_transceiver.name=标签无线收发器
+
+# GUI
+gtnhlabeledwireless.gui.labeled_wireless_transceiver.title=标签无线收发器
+gtnhlabeledwireless.gui.label=标签
+gtnhlabeledwireless.gui.channels=频道列表
+gtnhlabeledwireless.gui.add=添加
+gtnhlabeledwireless.gui.delete=删除
+gtnhlabeledwireless.gui.rename=重命名
+gtnhlabeledwireless.gui.current=当前
+gtnhlabeledwireless.gui.none=无
