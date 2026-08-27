@@ -39,6 +39,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private static final int BTN_ADD = 0;
     private static final int BTN_DELETE = 1;
     private static final int BTN_RENAME = 2;
+    private static final int BTN_LOCK = 3;
 
     // 左侧频道列表区域（相对 GUI 左上角）
     private static final int LIST_LEFT = 8;
@@ -61,6 +62,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private GuiButton addButton;
     private GuiButton deleteButton;
     private GuiButton renameButton;
+    private GuiButton lockButton;
 
     /** 频道列表数据（label 名称列表），来自 {@link ChannelListS2CPacket#LATEST}。 */
     private final List<String> channelList = new ArrayList<>();
@@ -99,10 +101,14 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                 BTN_COL_W, 16, I18n.format("gtnhlabeledwireless.gui.delete"));
         this.renameButton = new GuiButton(BTN_RENAME, this.guiLeft + BTN_COL_X, this.guiTop + 72,
                 BTN_COL_W, 16, I18n.format("gtnhlabeledwireless.gui.rename"));
+        // v0.5.0：锁定开关（锁定后无法用扳手拆卸）
+        this.lockButton = new GuiButton(BTN_LOCK, this.guiLeft + BTN_COL_X, this.guiTop + 92,
+                BTN_COL_W, 16, lockButtonLabel());
 
         this.buttonList.add(this.addButton);
         this.buttonList.add(this.deleteButton);
         this.buttonList.add(this.renameButton);
+        this.buttonList.add(this.lockButton);
 
         this.localCurrentLabel = tile.getLabelForDisplay();
         this.lastTileLabel = tile.getLabelForDisplay();
@@ -149,6 +155,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                     localCurrentLabel = newLabel; // 乐观更新
                 }
             }
+        } else if (button == this.lockButton) {
+            // v0.5.0：切换锁定状态（锁定后无法用扳手拆卸）；服务端回显描述包后按钮文案刷新
+            SetLabelC2SPacket.sendChannelAction(
+                    SetLabelC2SPacket.ACTION_TOGGLE_LOCK,
+                    tile.xCoord, tile.yCoord, tile.zCoord, "", "");
         }
     }
 
@@ -231,6 +242,12 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         super.updateScreen();
         this.labelField.updateCursorCounter();
 
+        // v0.5.0：描述包同步的锁定状态变化时刷新按钮文案
+        String label = lockButtonLabel();
+        if (!label.equals(this.lockButton.displayString)) {
+            this.lockButton.displayString = label;
+        }
+
         // 来源 3：方块实体描述包同步——仅当值发生变化时采纳（新鲜同步，含真实清除），
         // 客户端尚未同步到的旧值（如 null）不会把“当前”打回“无”。
         String tileLabel = tile.getLabelForDisplay();
@@ -261,6 +278,13 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             selectedLabel = null;
         }
         clampScroll();
+    }
+
+    /** 锁定按钮文案（随 tile 锁定状态切换，描述包同步后由 updateScreen 刷新）。 */
+    private String lockButtonLabel() {
+        return I18n.format(tile.isLocked()
+                ? "gtnhlabeledwireless.gui.unlock"
+                : "gtnhlabeledwireless.gui.lock");
     }
 
     @Override
@@ -331,6 +355,12 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                         ? trimToWidth(currentLabel, 130)
                         : I18n.format("gtnhlabeledwireless.gui.none"));
         this.fontRendererObj.drawString(currentStr, left + 8, top + 146, 0x88FF88);
+
+        // v0.5.0：锁定状态提示（锁定 = 扳手无法拆卸）
+        String lockStr = I18n.format(tile.isLocked()
+                ? "gtnhlabeledwireless.gui.locked_status"
+                : "gtnhlabeledwireless.gui.unlocked_status");
+        this.fontRendererObj.drawString(lockStr, left + 8, top + 184, tile.isLocked() ? 0xFFAA55 : 0x888888);
 
         // Label input field
         this.fontRendererObj.drawString(
