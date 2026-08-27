@@ -84,9 +84,10 @@ public class SetLabelC2SPacket implements IMessage {
         }
     }
 
-    /** 频道管理操作类型（删除/重命名），与 {@link ChannelActionC2SPacket} 保持一致。 */
+    /** 频道管理操作类型（删除/重命名/锁定切换），与 {@link ChannelActionC2SPacket} 保持一致。 */
     public static final int ACTION_DELETE = ChannelActionC2SPacket.ACTION_DELETE;
     public static final int ACTION_RENAME = ChannelActionC2SPacket.ACTION_RENAME;
+    public static final int ACTION_TOGGLE_LOCK = ChannelActionC2SPacket.ACTION_TOGGLE_LOCK;
 
     /**
      * 便捷发送方法：由 GUI 调用，内部构造并发送 {@link ChannelActionC2SPacket}，
