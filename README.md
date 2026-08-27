@@ -6,6 +6,12 @@
 从而把多个本地 AE2 网络合并成一个网格——**跨距离、跨维度**无线共享存储 / 合成，
 类似 ExtendedAE 的标签无线收发器在 1.20 的行为。
 
+> **AI 构建声明**：本仓库的全部代码由 AI 模型生成并人工验证，无人类逐行手写。
+> 移植过程基于 [ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（LGPL-3.0）的
+> 公开设计与 [AE-Wireless-Transceiver](https://github.com/mynamexiaopiao/AE-Wireless-Transceiver)
+> 的设计思路，未复制上述仓库的任何源码文件；AE2 网格机制经字节码级反汇编分析后独立实现。
+> 详见下方「许可」。
+
 ## 特性
 
 - **标签频道网络**：给收发器设置一个标签（频道），同标签即互联；频道号从 1000000 起自动分配，持久化到主世界。
@@ -83,4 +89,11 @@ $env:JAVA_HOME = "<你的 zulu25 路径>"
 
 ## 许可
 
-移植自 [GaLicn/ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus) 的标签无线收发器部分。
+本项目代码由 **AI 模型生成**（见顶部声明），移植自
+[GaLicn/ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（**LGPL-3.0**）的
+标签无线收发器部分，作为其衍生改编作品以 **LGPL-3.0** 协议发布（见仓库内 `LICENSE`）。
+主要设计参考：
+- [GaLicn/ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（LGPL-3.0）——标签无线收发器原版设计；
+- [mynamexiaopiao/AE-Wireless-Transceiver](https://github.com/mynamexiaopiao/AE-Wireless-Transceiver)（仓库未声明许可证，仅参考其跨维度无线传输思路，未使用其代码）。
+
+与 AE2（LGPL-3.0）为编译期/运行期接口依赖关系，未包含或分发 AE2 源码/二进制；AE2 二进制由 GTNH 实例提供。
