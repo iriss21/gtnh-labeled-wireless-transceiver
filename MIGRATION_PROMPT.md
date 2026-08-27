@@ -50,7 +50,8 @@ GTNHWireless (@Mod 入口)
     ├── VirtualLabelNodeHost（虚拟枢纽节点宿主）
     ├── WirelessActiveRegistry（在线端点注册表）
     ├── WirelessTickHandler（ServerTickEvent 驱动）
-    ├── WirelessTeamUtil（owner=placerId 或 PUBLIC_NETWORK_UUID）
+    ├── WirelessTeamUtil（owner 规则：队伍派生 UUID > placerId > PUBLIC，v0.5.0）
+    ├── ServerUtilitiesTeamApi（反射封装 ServerUtilities 队伍查询，v0.5.0）
     ├── WorldLifecycleHandler（世界加载/卸载事件）
     └── IWirelessEndpoint / IWirelessTicker（接口）
 ```
@@ -119,13 +120,36 @@ GTNHWireless (@Mod 入口)
 
 - **v0.4.0**：跨维度默认开启 + 修复刷物品漏洞（见第五节）。
 - **v0.4.1**：配置键迁移（crossDimensionalNetwork）+ 修复 FML 监听器 IllegalAccessError。
-- **v0.4.2**（当前）：
+- **v0.4.2**：
   - **修复删除频道后收发器不断连**：`refreshLabel` 由 `register`（会重建网络）改为只查不建
     （`getNetwork`），网络不存在 → `clearLabel` 彻底断开；`LabelNetwork` 加 `volatile boolean deleted`，
     `removeNetwork` 先置标记再销毁节点；`LabelLink.updateStatus` / `ensureVirtualNode` 遇 deleted
     立即断开/拒绝重建——任何路径都不能让已删除频道复活。
   - **TPS 优化**：`updateState` 每 5 tick 一次（链路翻转立即刷新），网格能量查询降到 1/5；
     `WirelessActiveRegistry.tickAll` 空集合直接返回，不再每 tick 分配快照。
+- **v0.5.0**（当前）：
+  - **FTB 队伍独立频道**：`WirelessTeamUtil.getNetworkOwnerUUID` 服务端优先查
+    `ServerUtilitiesTeamApi.getTeamUidCode(placerId)`——玩家属于队伍时返回
+    `UUID.nameUUIDFromBytes("gtnhw:team:" + uid)` 派生固定 UUID（同队共享频道、跨队隔离，
+    确定性派生保证 WorldSavedData 持久化 owner 跨重启稳定）；无队伍 → 个人 UUID；无放置者 → PUBLIC。
+    注意：`getNetworkOwnerUUID` 在 `level.isRemote` 时直接返回 placerId（客户端无 Universe 数据）。
+  - **扳手拆卸 + 锁定**：`LabeledWirelessTransceiverBlock.onBlockActivated` 按序处理——
+    ① `Platform.isWrench` + 蹲下 → 拆卸（`downloadSettings(SettingsFrom.DISMANTLE_ITEM)` 把
+    标签/频率/锁定/放置者写入掉落物 NBT，`removedByPlayer`+`Platform.spawnDrops`+`setBlockToAir`，
+    尊重 `BlockEvent.BreakEvent` 取消；tile 锁定时拒绝并提示）；② 手持 `IMemoryCard` →
+    蹲下=复制（`setMemoryCardContents(stack, getUnlocalizedName(), downloadSettings(MEMORY_CARD))`，
+    `SETTINGS_SAVED`），普通右键=粘贴（`getSettingsName` 匹配 unlocalizedName 后
+    `uploadSettings(MEMORY_CARD, getData)`，`SETTINGS_LOADED`，不匹配 `INVALID_MACHINE`）；
+    ③ 默认打开 GUI。放置恢复：`onBlockPlacedBy` 读物品 NBT（NBT_PLACER_HI/LO）恢复原放置者 +
+    `readSettingsFromStack` 恢复标签/锁定。
+  - **AE 内存卡 / 扳手 NBT 键**：`NBT_LABEL=lwLabel`、`NBT_FREQUENCY=lwFrequency`、
+    `NBT_LOCKED=lwLocked`、`NBT_PLACER_HI/LO`、`NBT_PLACER_NAME`（定义在
+    `LabeledWirelessTransceiverTile`）。`downloadSettings/uploadSettings` 覆写
+    `AEBaseTile`（super 调用保留 customName/config/priority 逻辑）。
+  - **锁定状态**：tile 字段 `locked`，NBT（`locked`）+ 描述包（writeWirelessStream 加 boolean）
+    双路持久化/同步；GUI 右侧加锁定按钮（BTN_LOCK，`ChannelActionC2SPacket.ACTION_TOGGLE_LOCK=2`），
+    updateScreen 按描述包刷新按钮文案，画布底部显示锁定状态行；lang 键：
+    `gui.lock/gui.unlock/gui.locked_status/gui.unlocked_status/chat.locked`。
 
 ## 八、迁移到其他 MC 版本时的 checklist
 
@@ -148,4 +172,4 @@ GTNHWireless (@Mod 入口)
 
 ---
 
-*生成于 2026-08-27，覆盖 v0.3.4 → v0.4.2 全部历史对话经验。*
+*生成于 2026-08-27，覆盖 v0.3.4 → v0.5.0 全部历史对话经验。*
