@@ -1,0 +1,15 @@
+# GTNH Labeled Wireless Transceiver - English
+
+# Item / Block names
+tile.gtnhlabeledwireless.labeled_wireless_transceiver.name=Labeled Wireless Transceiver
+gtnhlabeledwireless.labeled_wireless_transceiver.name=Labeled Wireless Transceiver
+
+# GUI
+gtnhlabeledwireless.gui.labeled_wireless_transceiver.title=Labeled Wireless Transceiver
+gtnhlabeledwireless.gui.label=Label
+gtnhlabeledwireless.gui.channels=Channels
+gtnhlabeledwireless.gui.add=Add
+gtnhlabeledwireless.gui.delete=Delete
+gtnhlabeledwireless.gui.rename=Rename
+gtnhlabeledwireless.gui.current=Current
+gtnhlabeledwireless.gui.none=None
