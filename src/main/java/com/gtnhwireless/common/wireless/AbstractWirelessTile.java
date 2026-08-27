@@ -149,8 +149,29 @@ public abstract class AbstractWirelessTile extends AEBaseTile
         return this.gridProxy;
     }
 
+    /**
+     * 返回此节点在{@code dir}方向上暴露给 AE2 邻接检测（FindConnections）的网格节点。
+     *
+     * <p>适配 1.7.10 AE2 rv3 的行为：{@code GridNode.FindConnections()} 遍历六个方向，
+     * 对每个方向上 {@code instanceof IGridHost} 的方块调此方法；若返回非 null，
+     * 就创建一条从本机网格到对方网格的 {@code GridConnection}。线缆通过此机制发现并连接机器。
+     *
+     * <p><b>重要修复（v0.5.1）：</b>若邻接方块是另一个无线收发器（{@link AbstractWirelessTile} 子类），
+     * 则返回 null，阻止 AE2 自动创建邻接网格连接。原因是两个不同频道（标签）的收发器紧贴时，
+     * 它们的网格节点会误连成同一网格 → 存储缓存合并 → 两个标签网络均可访问对方单元格 →
+     * 从一侧取物、另一侧不减的复制漏洞。线缆（非 AbstractWirelessTile）不受影响，仍可正常连接。     */
     @Override
     public IGridNode getGridNode(ForgeDirection dir) {
+        if (this.worldObj != null) {
+            TileEntity adj = this.worldObj.getTileEntity(
+                    this.xCoord + dir.offsetX,
+                    this.yCoord + dir.offsetY,
+                    this.zCoord + dir.offsetZ);
+            // 邻接也是无线收发器 → 拒絕自动连接（防复制漏洞）
+            if (adj instanceof AbstractWirelessTile) {
+                return null;
+            }
+        }
         return this.gridProxy.getNode();
     }
 
