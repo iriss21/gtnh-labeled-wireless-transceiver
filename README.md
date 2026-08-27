@@ -3,7 +3,8 @@
 把 EAEP「标签无线收发器」移植到 **Minecraft 1.7.10 / GTNH**
 
 
-> **AI 构建声明**：本仓库的全部代码由 AI 模型（D指导）生成，无人类逐行手写，纯石山代码。
+> **AI 构建声明**：本仓库的全部代码由 AI 模型（D指导）生成，无人类逐行手写，连上传github都是让AI干的，纯石山代码。
+> 
 > 移植过程基于 [ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（LGPL-3.0）的
 > 公开设计与 [AE-Wireless-Transceiver](https://github.com/mynamexiaopiao/AE-Wireless-Transceiver)
 > 的设计思路，未复制上述仓库的任何源码文件；AE2 网格机制经字节码级反汇编分析后独立实现。
