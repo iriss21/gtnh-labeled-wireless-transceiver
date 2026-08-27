@@ -9,7 +9,7 @@ public final class Reference {
 
     public static final String MODID = "gtnhlabeledwireless";
     public static final String NAME = "GTNH Labeled Wireless Transceiver";
-    public static final String VERSION = "0.4.1";
+    public static final String VERSION = "0.4.2";
 
     /** AE2（GTNH 分支）的 modid，作为本模组的硬依赖。 */
     public static final String AE2_MODID = "appliedenergistics2";
