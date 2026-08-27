@@ -2,6 +2,7 @@ package com.gtnhwireless.common.wireless;
 
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.energy.IEnergyGrid;
+import appeng.util.SettingsFrom;
 import com.gtnhwireless.common.ModContent;
 import com.gtnhwireless.common.ae.wireless.LabelLink;
 import com.gtnhwireless.common.ae.wireless.LabelNetworkRegistry;
@@ -23,6 +24,14 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     private long frequency = 0L;
     private String labelForDisplay;
     private final LabelLink labelLink = new LabelLink(this);
+
+    /**
+     * 锁定状态（v0.5.0）。锁定时：
+     * - 扳手蹲下右键无法拆卸（拆卸请求被拒绝并提示玩家）；
+     * - 仍可正常徒手/任意工具挖掘（防误拆，非防破坏）。
+     * 持久化到 NBT 并随描述包同步，GUI 提供锁定切换按钮。
+     */
+    private boolean locked;
 
     public LabeledWirelessTransceiverTile() {
         super(ModContent.labeledWirelessTransceiver != null
@@ -92,6 +101,80 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
         this.frequency = net.channel();
         this.labelLink.setTarget(net);
         updateState();
+        saveChanges();
+        syncToClient();
+    }
+
+    public boolean isLocked() {
+        return locked;
+    }
+
+    /** 切换锁定状态（服务端 GUI 按钮调用）。持久化并同步描述包。 */
+    public void setLocked(boolean locked) {
+        if (this.locked == locked) return;
+        this.locked = locked;
+        saveChanges();
+        syncToClient();
+    }
+
+    /* ===================== AE 内存卡 / 扳手拆卸 设置存取（v0.5.0） =====================
+     * AE2 的内存卡（IMemoryCard）与扳手拆卸（DISMANTLE_ITEM）都通过
+     * AEBaseTile.downloadSettings/uploadSettings 读写方块配置。本类把标签、
+     * 频率、锁定状态纳入其中：内存卡可复制粘贴整套配置；扳手拆卸会把配置
+     * 写进掉落物物品的 NBT，重新放置时由 Block.onBlockPlacedBy 恢复。
+     */
+
+    /** 内存卡 / 掉落物上保存本收发器配置的 NBT 键。 */
+    public static final String NBT_LABEL = "lwLabel";
+    public static final String NBT_FREQUENCY = "lwFrequency";
+    public static final String NBT_LOCKED = "lwLocked";
+    public static final String NBT_PLACER_HI = "lwPlacerHi";
+    public static final String NBT_PLACER_LO = "lwPlacerLo";
+    public static final String NBT_PLACER_NAME = "lwPlacerName";
+
+    @Override
+    public NBTTagCompound downloadSettings(SettingsFrom from) {
+        NBTTagCompound tag = super.downloadSettings(from);
+        if (tag == null) tag = new NBTTagCompound();
+        if (labelForDisplay != null && !labelForDisplay.isEmpty()) {
+            tag.setString(NBT_LABEL, labelForDisplay);
+        }
+        tag.setLong(NBT_FREQUENCY, frequency);
+        tag.setBoolean(NBT_LOCKED, locked);
+        // 扳手拆卸：把放置者信息一并写入掉落物，重新放置后频道归属不变。
+        if (from == SettingsFrom.DISMANTLE_ITEM) {
+            if (placerId != null) {
+                tag.setLong(NBT_PLACER_HI, placerId.getMostSignificantBits());
+                tag.setLong(NBT_PLACER_LO, placerId.getLeastSignificantBits());
+            }
+            if (placerName != null) {
+                tag.setString(NBT_PLACER_NAME, placerName);
+            }
+        }
+        return tag;
+    }
+
+    @Override
+    public void uploadSettings(SettingsFrom from, NBTTagCompound tag) {
+        super.uploadSettings(from, tag);
+        if (tag == null) return;
+        this.locked = tag.getBoolean(NBT_LOCKED);
+        String label = tag.hasKey(NBT_LABEL) ? tag.getString(NBT_LABEL) : null;
+        if (label != null && !label.isEmpty()) {
+            applyLabel(label);
+        } else {
+            clearLabel();
+        }
+    }
+
+    /** 从（扳手拆卸掉落物）物品 NBT 恢复配置：锁定 + 标签（重新注册接入网络）。 */
+    public void readSettingsFromStack(NBTTagCompound tag) {
+        if (tag == null) return;
+        this.locked = tag.getBoolean(NBT_LOCKED);
+        String label = tag.hasKey(NBT_LABEL) ? tag.getString(NBT_LABEL) : null;
+        if (label != null && !label.isEmpty() && !label.equals(this.labelForDisplay)) {
+            applyLabel(label);
+        }
         saveChanges();
         syncToClient();
     }
@@ -201,6 +284,7 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     @Override
     protected void writeWirelessNBT(NBTTagCompound tag) {
         tag.setLong("frequency", frequency);
+        tag.setBoolean("locked", locked);
         if (labelForDisplay != null) {
             tag.setString("label", labelForDisplay);
         }
@@ -209,12 +293,14 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     @Override
     protected void readWirelessNBT(NBTTagCompound tag) {
         this.frequency = tag.getLong("frequency");
+        this.locked = tag.getBoolean("locked");
         this.labelForDisplay = tag.hasKey("label") ? tag.getString("label") : null;
     }
 
     @Override
     protected void writeWirelessStream(io.netty.buffer.ByteBuf buf) {
         buf.writeLong(frequency);
+        buf.writeBoolean(locked);
         if (labelForDisplay == null) {
             buf.writeShort(-1);
         } else {
@@ -227,6 +313,7 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     @Override
     protected void readWirelessStream(io.netty.buffer.ByteBuf buf) {
         this.frequency = buf.readLong();
+        this.locked = buf.readBoolean();
         int len = buf.readShort();
         if (len < 0) {
             this.labelForDisplay = null;
