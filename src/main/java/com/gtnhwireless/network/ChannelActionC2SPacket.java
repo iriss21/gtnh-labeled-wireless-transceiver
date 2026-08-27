@@ -25,6 +25,8 @@ public class ChannelActionC2SPacket implements IMessage {
 
     public static final int ACTION_DELETE = 0;
     public static final int ACTION_RENAME = 1;
+    /** 切换本收发器的锁定状态（锁定后无法用扳手拆卸）。v0.5.0。 */
+    public static final int ACTION_TOGGLE_LOCK = 2;
 
     private int action;
     private int x, y, z;
@@ -104,6 +106,9 @@ public class ChannelActionC2SPacket implements IMessage {
                     if (msg.label.equals(tile.getLabelForDisplay())) {
                         tile.applyLabel(msg.newName);
                     }
+                    break;
+                case ACTION_TOGGLE_LOCK:
+                    tile.setLocked(!tile.isLocked());
                     break;
             }
 
