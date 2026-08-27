@@ -26,7 +26,11 @@
 
 ## 版本历史
 
-### v0.4.1（当前）
+### v0.4.2（当前）
+- **修复删除频道后收发器不断连**：此前删除频道后，未加载区块中的收发器重载时会把已删除的频道“复活”（`refreshLabel` 用 `register` 兜底重建网络）。v0.4.2 改为只查不建，网络不存在即清空标签彻底断开，并给已删除网络加 `deleted` 标记，杜绝任何路径的频道复活。
+- **TPS 优化**：方块状态检查从每 tick 节流到每 5 tick（链路翻转时立即刷新），网格能量查询开销降为原来的 1/5；无在线端点时 `tickAll` 直接返回，不再每 tick 分配快照。
+
+### v0.4.1
 - **配置迁移修复**：v0.3.4 生成的 `crossDimensionalLabelNetwork=false` 会被 Forge 配置读回、覆盖 v0.4.0 的默认开启，导致跨维度实际未生效（另一维度看不到频道）。v0.4.1 自动删除旧键并改用新键 `crossDimensionalNetwork`（默认 `true`）。
 - 修复 FML 事件监听器 IllegalAccessError 启动崩溃：世界生命周期监听器改为独立 public 类 `WorldLifecycleHandler`（1.7.10 FML 的 ASMEventHandler 在独立 classloader 中访问匿名/包私有类会崩溃）。
 
