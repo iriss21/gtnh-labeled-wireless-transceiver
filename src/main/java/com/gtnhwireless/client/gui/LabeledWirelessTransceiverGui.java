@@ -220,7 +220,9 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         int dWheel = Mouse.getEventDWheel();
         if (dWheel != 0) {
             int mx = Mouse.getEventX() * this.width / this.mc.displayWidth;
-            int my = this.height - Mouse.getEventY() * this.mc.displayHeight / this.height - 1;
+            // v0.5.7：修复坐标换算分子分母颠倒（此前 getEventY * displayHeight / height
+            // 把 y 放大到数千，isInList 永远不命中，滚轮翻页失效）。
+            int my = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
             if (isInList(mx, my)) {
                 scrollBy(dWheel > 0 ? -1 : 1);
             }
