@@ -97,6 +97,13 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private String localCurrentLabel = null;
     /** 上一帧方块实体描述包同步到的标签值（用于识别「新鲜的」服务端同步）。 */
     private String lastTileLabel = null;
+    /**
+     * v0.5.5：进行中的重命名追踪（旧名 → 新名）。
+     * 重命名后旧的频道列表回显 / 旧描述包可能晚到，把「当前」显示打回旧名；
+     * 追踪存在期间忽略旧名来源的覆盖，直到收到新名确认（或确认失败后清除）。
+     */
+    private String pendingRenameOld = null;
+    private String pendingRenameNew = null;
     /** 列表滚动偏移（基于 filteredList）。 */
     private int scrollOffset = 0;
 
@@ -177,13 +184,15 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             if (selectedLabel != null) {
                 String newLabel = this.labelField.getText().trim();
                 if (!newLabel.isEmpty() && !newLabel.equals(selectedLabel)) {
-                    // v0.5.4：仅当被重命名的频道正是本收发器当前标签时，才乐观更新"当前"显示
-                    // （重命名其他频道不会改变本收发器的标签；无条件更新会闪烁错误名称，
-                    //   虽会被服务端权威回显纠正，但显示上误导）。
+                    // 仅当被重命名的频道正是本收发器当前标签时，才乐观更新"当前"显示
+                    // （重命名其他频道不会改变本收发器的标签；无条件更新会闪烁错误名称）。
                     boolean wasCurrent = selectedLabel.equals(localCurrentLabel);
                     SetLabelC2SPacket.sendChannelAction(
                             SetLabelC2SPacket.ACTION_RENAME,
                             tile.xCoord, tile.yCoord, tile.zCoord, selectedLabel, newLabel);
+                    // v0.5.5：登记重命名追踪，防止旧回显/旧描述包把「当前」打回旧名
+                    this.pendingRenameOld = selectedLabel;
+                    this.pendingRenameNew = newLabel;
                     if (!channelList.contains(newLabel)) {
                         int idx = channelList.indexOf(selectedLabel);
                         if (idx >= 0) channelList.set(idx, newLabel);
@@ -334,20 +343,51 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             this.lockButton.displayString = label;
         }
 
+        // v0.5.5：重命名追踪——先依据权威频道列表判断重命名是否成功。
+        // 新名已出现在列表中 = 服务端已确认重命名（忽略旧名来源的覆盖，等待新名回显）；
+        // 新名未出现 = 重命名失败（如目标名已占用），清除追踪并接受回显纠正回旧状态。
+        boolean renamePending = pendingRenameNew != null;
+        if (renamePending && !ChannelListS2CPacket.LATEST.contains(pendingRenameNew)) {
+            pendingRenameOld = null;
+            pendingRenameNew = null;
+            renamePending = false;
+        }
+
         // 来源 3：方块实体描述包同步——仅当值发生变化时采纳（新鲜同步，含真实清除），
         // 客户端尚未同步到的旧值（如 null）不会把「当前」打回「无」。
         String tileLabel = tile.getLabelForDisplay();
-        if (lastTileLabel == null ? tileLabel != null : !lastTileLabel.equals(tileLabel)) {
-            localCurrentLabel = tileLabel;
+        if (renamePending && pendingRenameOld != null && pendingRenameOld.equals(tileLabel)) {
+            // 重命名期间的旧名描述包：客户端 tile 尚未同步到新名，保持乐观新值
+            lastTileLabel = tileLabel;
+        } else {
+            if (lastTileLabel == null ? tileLabel != null : !lastTileLabel.equals(tileLabel)) {
+                localCurrentLabel = tileLabel;
+            }
+            lastTileLabel = tileLabel;
+            if (renamePending && pendingRenameNew != null && pendingRenameNew.equals(tileLabel)) {
+                // 权威确认（描述包已同步新名）：清除追踪
+                pendingRenameOld = null;
+                pendingRenameNew = null;
+                renamePending = false;
+            }
         }
-        lastTileLabel = tileLabel;
 
         // 来源 2：操作回显（权威，消费一次即清空，避免过期回显覆盖之后的新状态）
         ChannelListS2CPacket.CurrentLabel current = ChannelListS2CPacket.LATEST_CURRENT;
         if (current != null) {
             ChannelListS2CPacket.LATEST_CURRENT = null;
             if (current.matches(tile.xCoord, tile.yCoord, tile.zCoord)) {
-                localCurrentLabel = current.label; // 可为 null（已断开）
+                if (renamePending && pendingRenameOld != null && pendingRenameOld.equals(current.label)) {
+                    // 旧回显（重命名前的操作回显晚到）：忽略，防止把「当前」打回旧名
+                } else {
+                    localCurrentLabel = current.label; // 可为 null（已断开）
+                    if (renamePending && pendingRenameNew != null && pendingRenameNew.equals(current.label)) {
+                        // 权威确认（新名回显）：清除追踪
+                        pendingRenameOld = null;
+                        pendingRenameNew = null;
+                        renamePending = false;
+                    }
+                }
             }
         }
 
@@ -407,10 +447,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                 I18n.format("gtnhlabeledwireless.gui.labeled_wireless_transceiver.title"),
                 left + 8, top + 8, 0xFFFFFF);
 
-        // Channel list header
-        this.fontRendererObj.drawString(
-                I18n.format("gtnhlabeledwireless.gui.channels"),
-                left + LIST_LEFT, top + 12, 0xAAAAAA);
+        // v0.5.5：删除「频道列表」标题（与主标题/搜索框文字重叠）
 
         // Search box background and text
         this.searchField.drawTextBox();
