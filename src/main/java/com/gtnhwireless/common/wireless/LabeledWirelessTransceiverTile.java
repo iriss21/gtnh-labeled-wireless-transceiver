@@ -93,6 +93,13 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
         LabelNetworkRegistry reg = LabelNetworkRegistry.get(worldObj);
         LabelNetworkRegistry.LabelNetwork net = reg.getNetwork(worldObj, labelForDisplay, placerId);
         if (net == null) {
+            // v0.5.4：频道被重命名后旧名已不存在。若旧名能解析到新名（重命名别名），
+            // 跟随新名重新接入，而不是清空标签掉线（未加载区块的收发器重载时走到这里）。
+            String renamed = reg.resolveRenamedLabel(worldObj, labelForDisplay, placerId);
+            if (renamed != null) {
+                applyLabel(renamed);
+                return;
+            }
             // 网络已不存在：彻底断开并清空标签（删除频道后未加载收发器重载时走到这里）。
             clearLabel();
             return;
@@ -236,9 +243,16 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
                 this.frequency = net.channel();
                 this.labelLink.setTarget(net);
             } else {
-                // v0.4.2：网络已被删除（register 不再自动重建，见 refreshLabel）——
-                // 自动重连无意义，清空标签彻底断开，避免残留“有标签但连不上”的中间态。
-                clearLabel();
+                // v0.5.4：旧名可能是频道重命名前的名称——解析新名并跟随，避免重连时被误清空
+                String renamed = LabelNetworkRegistry.get(worldObj)
+                        .resolveRenamedLabel(worldObj, labelForDisplay, placerId);
+                if (renamed != null) {
+                    applyLabel(renamed);
+                } else {
+                    // v0.4.2：网络已被删除（register 不再自动重建，见 refreshLabel）——
+                    // 自动重连无意义，清空标签彻底断开，避免残留“有标签但连不上”的中间态。
+                    clearLabel();
+                }
             }
         }
         wasConnected = connected;
