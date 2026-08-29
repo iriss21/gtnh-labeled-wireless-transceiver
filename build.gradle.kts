@@ -8,4 +8,6 @@ dependencies {
     // appliedenergistics2-rv3-beta-695-GTNH.jar 完全一致（SHA256 相同），
     // 编译期消费即可；运行时由 GTNH 实例提供，不入包。
     compileOnly("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-695-GTNH")
+
+    // AE2Stuff 无线接入器在运行时通过 GameRegistry.findBlock 查找，不需要编译期依赖。
 }
