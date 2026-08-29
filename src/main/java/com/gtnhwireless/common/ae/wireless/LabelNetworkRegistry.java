@@ -49,6 +49,15 @@ public class LabelNetworkRegistry extends WorldSavedData {
     private static LabelNetworkRegistry INSTANCE;
 
     private final Map<LabelKey, LabelNetwork> networks = new HashMap<>();
+
+    /**
+     * 重命名别名表（v0.5.4）：旧 LabelKey(dim, owner, 旧label) → 当前 label。
+     * 频道重命名后，未加载区块中的收发器 NBT 仍保存旧标签；它们重载 / 重连时用旧名
+     * 查不到网络，通过本表解析出当前名并跟随，避免被误判为"频道已删除"而清空掉线。
+     * 持久化到 NBT，支持多级重命名（A→B→C）的链式解析。
+     */
+    private final Map<LabelKey, String> renameAlias = new HashMap<>();
+
     private long nextChannel = CHANNEL_START;
 
     public LabelNetworkRegistry(String name) {
@@ -176,8 +185,31 @@ public class LabelNetworkRegistry extends WorldSavedData {
         networks.put(newKey, net);
         // 更新网络对象的 label 字段（用于 ensureVirtualNode 的 tag 名等）
         net.label = newLabel;
+        // v0.5.4：记录重命名别名，供未加载区块的收发器重载时把旧名解析到新名并跟随
+        renameAlias.put(new LabelKey(dim, oldLabel, owner), newLabel);
         markDirty();
         return true;
+    }
+
+    /**
+     * 把被重命名频道的旧名解析为当前名（v0.5.4）。支持多级重命名（A→B→C）的链式解析；
+     * 该旧名从未被重命名过（或别名已不存在）时返回 null。
+     *
+     * @return 当前标签名；无别名链时返回 null
+     */
+    public String resolveRenamedLabel(World level, String rawLabel, UUID placerId) {
+        String label = normalizeLabel(rawLabel);
+        if (label == null) return null;
+        UUID owner = WirelessTeamUtil.getNetworkOwnerUUID(level, placerId);
+        int dim = Reference.WIRELESS_CROSS_DIM ? -1 : level.provider.dimensionId;
+        String current = label;
+        Set<String> seen = new HashSet<>();
+        while (seen.add(current)) {
+            String next = renameAlias.get(new LabelKey(dim, current, owner));
+            if (next == null) break;
+            current = next;
+        }
+        return current.equals(label) ? null : current;
     }
 
     public List<LabelNetworkSnapshot> listNetworks(World level, UUID placerId) {
@@ -220,6 +252,19 @@ public class LabelNetworkRegistry extends WorldSavedData {
             list.appendTag(nbt);
         }
         tag.setTag("networks", list);
+        // v0.5.4：重命名别名表持久化（未加载区块收发器重载时解析旧名）
+        NBTTagList aliasList = new NBTTagList();
+        for (Map.Entry<LabelKey, String> e : renameAlias.entrySet()) {
+            LabelKey k = e.getKey();
+            NBTTagCompound nbt = new NBTTagCompound();
+            nbt.setInteger("dim", k.dim);
+            nbt.setString("label", k.label);
+            nbt.setLong("owner", k.owner.getMostSignificantBits());
+            nbt.setLong("ownerL", k.owner.getLeastSignificantBits());
+            nbt.setString("newLabel", e.getValue());
+            aliasList.appendTag(nbt);
+        }
+        tag.setTag("renameAlias", aliasList);
     }
 
     @Override
@@ -245,6 +290,17 @@ public class LabelNetworkRegistry extends WorldSavedData {
                 net.endpoints.add(new EndpointRef(rtag.getInteger("dim"), rtag.getInteger("x"), rtag.getInteger("y"), rtag.getInteger("z")));
             }
             networks.put(new LabelKey(dim, label, owner), net);
+        }
+        // v0.5.4：重命名别名表读取
+        renameAlias.clear();
+        NBTTagList aliasList = tag.getTagList("renameAlias", 10);
+        for (int i = 0; i < aliasList.tagCount(); i++) {
+            NBTTagCompound nbt = aliasList.getCompoundTagAt(i);
+            int dim = nbt.getInteger("dim");
+            String label = nbt.getString("label");
+            UUID owner = new UUID(nbt.getLong("owner"), nbt.getLong("ownerL"));
+            String newLabel = nbt.getString("newLabel");
+            renameAlias.put(new LabelKey(dim, label, owner), newLabel);
         }
     }
 
