@@ -73,26 +73,28 @@ public class GTNHWireless {
 
     private void registerRecipes() {
         if (ModContent.labeledWirelessTransceiver != null) {
-            // 配方：4 Paper + 1 Wireless Access Point + 4 Fluix Pearls
+            // 配方：4 Paper + 1 Wireless Accessor (AE2Stuff) + 4 Fluix Pearls
             // 布局：
             //   P E P
             //   E A E
             //   P E P
-            // AE2 rv3: wireless access point = blocks().wireless();
-            // maybeStack() returns Guava Optional (not java.util.Optional)
-            com.google.common.base.Optional<ItemStack> accessPoint = AEApi.instance().definitions()
-                    .blocks().wireless().maybeStack(1);
+            // 无线接入器来自 AE2Stuff（modid=ae2stuff, blockName=Wireless）
+            Block wirelessBlock = GameRegistry.findBlock("ae2stuff", "Wireless");
+            ItemStack accessorStack = wirelessBlock != null
+                    ? new ItemStack(wirelessBlock)
+                    : new ItemStack(net.minecraft.init.Items.diamond);
+
             com.google.common.base.Optional<ItemStack> fluixPearl = AEApi.instance().definitions()
                     .materials().fluixPearl().maybeStack(1);
 
-            if (accessPoint.isPresent() && fluixPearl.isPresent()) {
+            if (fluixPearl.isPresent() && wirelessBlock != null) {
                 GameRegistry.addRecipe(new ItemStack(ModContent.labeledWirelessTransceiver),
                         "pep", "eae", "pep",
                         'p', net.minecraft.init.Items.paper,
                         'e', fluixPearl.get(),
-                        'a', accessPoint.get());
+                        'a', accessorStack);
             } else {
-                // 回退：如果 AE2 物品尚未可用，使用末影珍珠 + 铁锭（旧配方简化版）
+                // 回退：如果 AE2 或 AE2Stuff 物品尚未可用，使用末影珍珠 + 钻石（旧配方简化版）
                 GameRegistry.addRecipe(new ItemStack(ModContent.labeledWirelessTransceiver),
                         "pep", "eae", "pep",
                         'p', net.minecraft.init.Items.paper,
