@@ -9,10 +9,12 @@ public final class Reference {
 
     public static final String MODID = "gtnhlabeledwireless";
     public static final String NAME = "GTNH Labeled Wireless Transceiver";
-    public static final String VERSION = "0.5.2";
+    public static final String VERSION = "0.5.3";
 
     /** AE2（GTNH 分支）的 modid，作为本模组的硬依赖。 */
     public static final String AE2_MODID = "appliedenergistics2";
+    /** AE2Stuff – 配方中无线接入器（Wireless Accessor）的来源（运行时 findBlock 查找，非硬依赖）。 */
+    public static final String AE2STUFF_MODID = "ae2stuff";
     public static final String DEPENDENCIES = "required-after:" + AE2_MODID + ";";
 
     public static final String CLIENT_PROXY = "com.gtnhwireless.client.ClientProxy";
