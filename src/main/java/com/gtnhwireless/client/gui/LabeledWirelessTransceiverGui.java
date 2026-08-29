@@ -20,18 +20,21 @@ import java.util.List;
 /**
  * 标签收发器配置 GUI（客户端）。
  *
- * 纯配置面板（无玩家背包槽）。v0.3.3 布局：
+ * 纯配置面板（无玩家背包槽）。v0.6.0 布局：
+ * - 左上：搜索框（支持拼音首字母搜索中文频道名称）；
  * - 左侧：频道列表（10 行可见，支持鼠标滚轮滚动 + 右缘滚动条），
  *   点击某一项即选中并应用到本收发器；
- * - 右侧：操作按钮竖排（添加 / 删除 / 重命名）；
+ * - 右侧：操作按钮竖排（添加 / 删除 / 重命名 / 锁定）；
  * - 底部：当前标签显示 + 标签输入框（回车 = 应用输入框文本）。
  *
- * 频道列表与“当前”标签来自客户端静态缓存 {@link ChannelListS2CPacket#LATEST} /
+ * 搜索功能使用 {@link PinyinSearchUtil} 支持：
+ * - 普通子串匹配（英文字母/数字/符号）
+ * - 拼音首字母匹配：输入拼音首字母可搜索中文频道名称
+ *   （如输入 "wdpd" 可匹配 "我的频道"）
+ *
+ * 频道列表与「当前」标签来自客户端静态缓存 {@link ChannelListS2CPacket#LATEST} /
  * {@link ChannelListS2CPacket#LATEST_CURRENT}（服务端在打开 GUI 与每次操作后推送），
- * GUI 在 updateScreen 中轮询刷新。“当前”标签的显示值按三种来源更新：
- * 1. 用户操作的乐观更新（点击列表 / 添加 / 重命名 / 回车）；
- * 2. 操作回显 {@link ChannelListS2CPacket#LATEST_CURRENT}（权威，消费一次）；
- * 3. 方块实体描述包同步（仅当值发生变化时采纳，避免客户端旧值闪回“无”）。
+ * GUI 在 updateScreen 中轮询刷新。
  */
 @SideOnly(Side.CLIENT)
 public class LabeledWirelessTransceiverGui extends GuiContainer {
@@ -43,7 +46,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
 
     // 左侧频道列表区域（相对 GUI 左上角）
     private static final int LIST_LEFT = 8;
-    private static final int LIST_TOP = 32;
+    private static final int LIST_TOP = 40;
     private static final int LIST_WIDTH = 112;
     private static final int LIST_ENTRY_HEIGHT = 11;
     private static final int LIST_VISIBLE_ENTRIES = 10;
@@ -53,30 +56,52 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     /** 列表内容区宽度（不含滚动条）。 */
     private static final int LIST_CONTENT_WIDTH = LIST_WIDTH - SCROLLBAR_WIDTH;
 
+    // 搜索框
+    private static final int SEARCH_TOP = 22;
+    private static final int SEARCH_HEIGHT = 13;
+
+    // 底部信息区域 Y 坐标
+    private static final int CURRENT_LABEL_Y = 156;
+    private static final int LABEL_TEXT_Y = 168;
+    private static final int LABEL_INPUT_Y = 178;
+    private static final int LOCK_STATUS_Y = 194;
+
     // 右侧按钮列
     private static final int BTN_COL_X = 124;
     private static final int BTN_COL_W = 44;
 
+    // 右侧按钮 Y 坐标（与列表顶部对齐）
+    private static final int BTN_TOP_Y = LIST_TOP;
+    private static final int BTN_GAP = 20;
+
     private final LabeledWirelessTransceiverTile tile;
+
+    /** 底部标签输入框（回车发送/回车=应用标签）。 */
     private GuiTextField labelField;
+    /** 搜索框（支持拼音首字母搜索中文）。 */
+    private GuiTextField searchField;
     private GuiButton addButton;
     private GuiButton deleteButton;
     private GuiButton renameButton;
     private GuiButton lockButton;
 
-    /** 频道列表数据（label 名称列表），来自 {@link ChannelListS2CPacket#LATEST}。 */
+    /** 完整频道列表数据（label 名称列表），来自 {@link ChannelListS2CPacket#LATEST}。 */
     private final List<String> channelList = new ArrayList<>();
+    /** 搜索过滤后的频道列表（用于显示）。 */
+    private final List<String> filteredList = new ArrayList<>();
+    /** 搜索框当前文本。 */
+    private String searchQuery = "";
     /** 当前选中的列表项名称（null = 未选中）。 */
     private String selectedLabel = null;
-    /** “当前”标签的本地显示值（乐观更新 + 服务端同步）。 */
+    /** 「当前」标签的本地显示值（乐观更新 + 服务端同步）。 */
     private String localCurrentLabel = null;
-    /** 上一帧方块实体描述包同步到的标签值（用于识别“新鲜的”服务端同步）。 */
+    /** 上一帧方块实体描述包同步到的标签值（用于识别「新鲜的」服务端同步）。 */
     private String lastTileLabel = null;
-    /** 列表滚动偏移。 */
+    /** 列表滚动偏移（基于 filteredList）。 */
     private int scrollOffset = 0;
 
     public LabeledWirelessTransceiverGui(LabeledWirelessTransceiverContainer container,
-                                        LabeledWirelessTransceiverTile tile) {
+                                         LabeledWirelessTransceiverTile tile) {
         super(container);
         this.tile = tile;
         this.xSize = 176;
@@ -90,19 +115,28 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
 
         String current = tile.getLabelForDisplay() == null ? "" : tile.getLabelForDisplay();
         this.labelField = new GuiTextField(this.fontRendererObj,
-                this.guiLeft + 8, this.guiTop + 168, 160, 13);
+                this.guiLeft + 8, this.guiTop + LABEL_INPUT_Y, 160, 13);
         this.labelField.setText(current);
         this.labelField.setMaxStringLength(64);
 
-        // 右侧按钮列：添加 / 删除 / 重命名（竖排）
-        this.addButton = new GuiButton(BTN_ADD, this.guiLeft + BTN_COL_X, this.guiTop + 32,
+        // 搜索框（位于频道列表上方，使用列表宽度）
+        this.searchField = new GuiTextField(this.fontRendererObj,
+                this.guiLeft + LIST_LEFT, this.guiTop + SEARCH_TOP,
+                LIST_WIDTH, SEARCH_HEIGHT);
+        this.searchField.setMaxStringLength(32);
+        this.searchField.setEnableBackgroundDrawing(true);
+        this.searchField.setVisible(true);
+
+        // 右侧按钮列：添加 / 删除 / 重命名 / 锁定（竖排，与列表顶部对齐）
+        int btnY = this.guiTop + BTN_TOP_Y;
+        this.addButton = new GuiButton(BTN_ADD, this.guiLeft + BTN_COL_X, btnY,
                 BTN_COL_W, 16, I18n.format("gtnhlabeledwireless.gui.add"));
-        this.deleteButton = new GuiButton(BTN_DELETE, this.guiLeft + BTN_COL_X, this.guiTop + 52,
+        this.deleteButton = new GuiButton(BTN_DELETE, this.guiLeft + BTN_COL_X, btnY + BTN_GAP,
                 BTN_COL_W, 16, I18n.format("gtnhlabeledwireless.gui.delete"));
-        this.renameButton = new GuiButton(BTN_RENAME, this.guiLeft + BTN_COL_X, this.guiTop + 72,
+        this.renameButton = new GuiButton(BTN_RENAME, this.guiLeft + BTN_COL_X, btnY + BTN_GAP * 2,
                 BTN_COL_W, 16, I18n.format("gtnhlabeledwireless.gui.rename"));
         // v0.5.0：锁定开关（锁定后无法用扳手拆卸）
-        this.lockButton = new GuiButton(BTN_LOCK, this.guiLeft + BTN_COL_X, this.guiTop + 92,
+        this.lockButton = new GuiButton(BTN_LOCK, this.guiLeft + BTN_COL_X, btnY + BTN_GAP * 3,
                 BTN_COL_W, 16, lockButtonLabel());
 
         this.buttonList.add(this.addButton);
@@ -153,10 +187,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                     }
                     selectedLabel = newLabel;
                     localCurrentLabel = newLabel; // 乐观更新
+                    refreshFilter();
                 }
             }
         } else if (button == this.lockButton) {
-            // v0.5.0：切换锁定状态（锁定后无法用扳手拆卸）；服务端回显描述包后按钮文案刷新
+            // v0.5.0：切换锁定状态；服务端回显描述包后按钮文案刷新
             SetLabelC2SPacket.sendChannelAction(
                     SetLabelC2SPacket.ACTION_TOGGLE_LOCK,
                     tile.xCoord, tile.yCoord, tile.zCoord, "", "");
@@ -183,17 +218,41 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     }
 
     private void scrollBy(int delta) {
-        int maxOffset = Math.max(0, channelList.size() - LIST_VISIBLE_ENTRIES);
+        int maxOffset = Math.max(0, filteredList.size() - LIST_VISIBLE_ENTRIES);
         scrollOffset = Math.max(0, Math.min(maxOffset, scrollOffset + delta));
     }
 
     private void clampScroll() {
-        int maxOffset = Math.max(0, channelList.size() - LIST_VISIBLE_ENTRIES);
+        int maxOffset = Math.max(0, filteredList.size() - LIST_VISIBLE_ENTRIES);
         if (scrollOffset > maxOffset) scrollOffset = maxOffset;
     }
 
     @Override
     protected void keyTyped(char c, int keyCode) {
+        // 搜索框处于焦点时
+        if (this.searchField.isFocused()) {
+            if (keyCode == Keyboard.KEY_ESCAPE) {
+                this.searchField.setFocused(false);
+                return;
+            }
+            if (keyCode == Keyboard.KEY_RETURN) {
+                // 回车 = 搜索框中若有内容且过滤后列表不为空，选中第一项
+                if (!filteredList.isEmpty()
+                        && !filteredList.get(0).equals(selectedLabel)) {
+                    applyListSelection(filteredList.get(0));
+                }
+                return;
+            }
+            this.searchField.textboxKeyTyped(c, keyCode);
+            String newQuery = this.searchField.getText().toLowerCase();
+            if (!newQuery.equals(this.searchQuery)) {
+                this.searchQuery = newQuery;
+                refreshFilter();
+            }
+            return;
+        }
+
+        // 标签输入框处于焦点时
         if (this.labelField.isFocused()) {
             if (keyCode == Keyboard.KEY_RETURN) {
                 String text = this.labelField.getText().trim();
@@ -207,6 +266,21 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             this.labelField.textboxKeyTyped(c, keyCode);
             return;
         }
+
+        // Tab 切换焦点：搜索框 ↔ 标签输入框
+        if (keyCode == Keyboard.KEY_TAB) {
+            if (this.searchField.isFocused()) {
+                this.searchField.setFocused(false);
+                this.labelField.setFocused(true);
+            } else if (this.labelField.isFocused()) {
+                this.labelField.setFocused(false);
+                this.searchField.setFocused(true);
+            } else {
+                this.searchField.setFocused(true);
+            }
+            return;
+        }
+
         if (keyCode == Keyboard.KEY_ESCAPE) {
             super.keyTyped(c, keyCode);
         }
@@ -216,6 +290,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         this.labelField.mouseClicked(mouseX, mouseY, mouseButton);
+        this.searchField.mouseClicked(mouseX, mouseY, mouseButton);
 
         // 点击列表内容区（不含滚动条）：选中并应用该频道
         int listLeft = this.guiLeft + LIST_LEFT;
@@ -226,21 +301,26 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         if (mouseX >= listLeft && mouseX <= listRight && mouseY >= listTop && mouseY <= listBottom) {
             int relY = mouseY - listTop;
             int clickedIndex = relY / LIST_ENTRY_HEIGHT + scrollOffset;
-            if (clickedIndex >= 0 && clickedIndex < channelList.size()) {
-                selectedLabel = channelList.get(clickedIndex);
-                String label = selectedLabel;
-                this.labelField.setText(label);
-                PacketHandler.INSTANCE.sendToServer(new SetLabelC2SPacket(
-                        tile.xCoord, tile.yCoord, tile.zCoord, label));
-                localCurrentLabel = label; // 乐观更新
+            if (clickedIndex >= 0 && clickedIndex < filteredList.size()) {
+                applyListSelection(filteredList.get(clickedIndex));
             }
         }
+    }
+
+    /** 选中一个频道并应用到本收发器。 */
+    private void applyListSelection(String label) {
+        selectedLabel = label;
+        this.labelField.setText(label);
+        PacketHandler.INSTANCE.sendToServer(new SetLabelC2SPacket(
+                tile.xCoord, tile.yCoord, tile.zCoord, label));
+        localCurrentLabel = label; // 乐观更新
     }
 
     @Override
     public void updateScreen() {
         super.updateScreen();
         this.labelField.updateCursorCounter();
+        this.searchField.updateCursorCounter();
 
         // v0.5.0：描述包同步的锁定状态变化时刷新按钮文案
         String label = lockButtonLabel();
@@ -249,7 +329,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         }
 
         // 来源 3：方块实体描述包同步——仅当值发生变化时采纳（新鲜同步，含真实清除），
-        // 客户端尚未同步到的旧值（如 null）不会把“当前”打回“无”。
+        // 客户端尚未同步到的旧值（如 null）不会把「当前」打回「无」。
         String tileLabel = tile.getLabelForDisplay();
         if (lastTileLabel == null ? tileLabel != null : !lastTileLabel.equals(tileLabel)) {
             localCurrentLabel = tileLabel;
@@ -271,10 +351,30 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         }
     }
 
+    /** 刷新完整频道列表 + 重新应用搜索过滤。 */
     private void refreshChannelList() {
         channelList.clear();
         channelList.addAll(ChannelListS2CPacket.LATEST);
         if (selectedLabel != null && !channelList.contains(selectedLabel)) {
+            selectedLabel = null;
+        }
+        refreshFilter();
+    }
+
+    /** 根据搜索关键词重新过滤列表并重置滚动偏移。 */
+    private void refreshFilter() {
+        filteredList.clear();
+        if (searchQuery.isEmpty()) {
+            filteredList.addAll(channelList);
+        } else {
+            for (String ch : channelList) {
+                if (PinyinSearchUtil.matches(searchQuery, ch)) {
+                    filteredList.add(ch);
+                }
+            }
+        }
+        // 检查当前选中项是否仍在过滤结果中
+        if (selectedLabel != null && !filteredList.contains(selectedLabel)) {
             selectedLabel = null;
         }
         clampScroll();
@@ -304,7 +404,10 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         // Channel list header
         this.fontRendererObj.drawString(
                 I18n.format("gtnhlabeledwireless.gui.channels"),
-                left + 8, top + 21, 0xAAAAAA);
+                left + LIST_LEFT, top + 12, 0xAAAAAA);
+
+        // Search box background and text
+        this.searchField.drawTextBox();
 
         // Channel list background
         int listLeft = left + LIST_LEFT;
@@ -314,11 +417,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
 
         // List entries
         String currentLabel = this.localCurrentLabel;
-        int visibleCount = Math.min(LIST_VISIBLE_ENTRIES, channelList.size() - scrollOffset);
+        int visibleCount = Math.min(LIST_VISIBLE_ENTRIES, filteredList.size() - scrollOffset);
         for (int i = 0; i < visibleCount; i++) {
             int idx = i + scrollOffset;
-            if (idx >= channelList.size()) break;
-            String entry = channelList.get(idx);
+            if (idx >= filteredList.size()) break;
+            String entry = filteredList.get(idx);
             int entryTop = listTop + i * LIST_ENTRY_HEIGHT;
             boolean isSelected = entry.equals(selectedLabel);
             boolean isCurrent = entry.equals(currentLabel);
@@ -341,7 +444,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         // Scrollbar (right edge of the list area)
         int trackX = listLeft + LIST_WIDTH - SCROLLBAR_WIDTH + 1;
         drawRect(trackX, listTop, trackX + SCROLLBAR_WIDTH - 2, listTop + LIST_HEIGHT, 0xFF111111);
-        int total = channelList.size();
+        int total = filteredList.size();
         if (total > LIST_VISIBLE_ENTRIES) {
             int thumbH = Math.max(10, LIST_HEIGHT * LIST_VISIBLE_ENTRIES / total);
             int maxOff = total - LIST_VISIBLE_ENTRIES;
@@ -354,18 +457,18 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                 (currentLabel != null && !currentLabel.isEmpty()
                         ? trimToWidth(currentLabel, 130)
                         : I18n.format("gtnhlabeledwireless.gui.none"));
-        this.fontRendererObj.drawString(currentStr, left + 8, top + 146, 0x88FF88);
+        this.fontRendererObj.drawString(currentStr, left + 8, top + CURRENT_LABEL_Y, 0x88FF88);
 
         // v0.5.0：锁定状态提示（锁定 = 扳手无法拆卸）
         String lockStr = I18n.format(tile.isLocked()
                 ? "gtnhlabeledwireless.gui.locked_status"
                 : "gtnhlabeledwireless.gui.unlocked_status");
-        this.fontRendererObj.drawString(lockStr, left + 8, top + 184, tile.isLocked() ? 0xFFAA55 : 0x888888);
+        this.fontRendererObj.drawString(lockStr, left + 8, top + LOCK_STATUS_Y, tile.isLocked() ? 0xFFAA55 : 0x888888);
 
         // Label input field
         this.fontRendererObj.drawString(
                 I18n.format("gtnhlabeledwireless.gui.label"),
-                left + 8, top + 158, 0xAAAAAA);
+                left + 8, top + LABEL_TEXT_Y, 0xAAAAAA);
         this.labelField.drawTextBox();
     }
 
