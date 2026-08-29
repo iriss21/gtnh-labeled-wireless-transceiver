@@ -16,9 +16,11 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.registry.GameRegistry;
+import appeng.api.AEApi;
 import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
+import net.minecraft.item.ItemStack;
 
 /**
  * 标签无线收发器（Labeled Wireless Transceiver）—— 跨维度 AE2 频道与电能传输模组。
@@ -71,12 +73,32 @@ public class GTNHWireless {
 
     private void registerRecipes() {
         if (ModContent.labeledWirelessTransceiver != null) {
-            GameRegistry.addRecipe(new net.minecraft.item.ItemStack(ModContent.labeledWirelessTransceiver),
-                    "iei", "pdp", "iei",
-                    'i', net.minecraft.init.Items.iron_ingot,
-                    'e', net.minecraft.init.Items.ender_pearl,
-                    'p', net.minecraft.init.Items.paper,
-                    'd', net.minecraft.init.Items.diamond);
+            // 配方：4 Paper + 1 Wireless Access Point + 4 Fluix Pearls
+            // 布局：
+            //   P E P
+            //   E A E
+            //   P E P
+            // AE2 rv3: wireless access point = blocks().wireless();
+            // maybeStack() returns Guava Optional (not java.util.Optional)
+            com.google.common.base.Optional<ItemStack> accessPoint = AEApi.instance().definitions()
+                    .blocks().wireless().maybeStack(1);
+            com.google.common.base.Optional<ItemStack> fluixPearl = AEApi.instance().definitions()
+                    .materials().fluixPearl().maybeStack(1);
+
+            if (accessPoint.isPresent() && fluixPearl.isPresent()) {
+                GameRegistry.addRecipe(new ItemStack(ModContent.labeledWirelessTransceiver),
+                        "pep", "eae", "pep",
+                        'p', net.minecraft.init.Items.paper,
+                        'e', fluixPearl.get(),
+                        'a', accessPoint.get());
+            } else {
+                // 回退：如果 AE2 物品尚未可用，使用末影珍珠 + 铁锭（旧配方简化版）
+                GameRegistry.addRecipe(new ItemStack(ModContent.labeledWirelessTransceiver),
+                        "pep", "eae", "pep",
+                        'p', net.minecraft.init.Items.paper,
+                        'e', net.minecraft.init.Items.ender_pearl,
+                        'a', net.minecraft.init.Items.diamond);
+            }
         }
     }
 }
