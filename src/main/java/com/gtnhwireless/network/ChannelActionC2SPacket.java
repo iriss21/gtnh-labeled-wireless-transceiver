@@ -101,10 +101,11 @@ public class ChannelActionC2SPacket implements IMessage {
                             WirelessTeamUtil.getNetworkOwnerUUID(world, placerId));
                     break;
                 case ACTION_RENAME:
-                    reg.renameNetwork(world, msg.label, msg.newName, placerId);
-                    // 如果本收发器正在使用被重命名的频道，更新显示名
-                    if (msg.label.equals(tile.getLabelForDisplay())) {
-                        tile.applyLabel(msg.newName);
+                    // v0.5.4：重命名成功后，所有正在使用该频道的已加载收发器统一跟随改名
+                    // （此前只更新发出操作的那一台，其他收发器显示旧名 / 重载后被清空掉线）。
+                    if (reg.renameNetwork(world, msg.label, msg.newName, placerId)) {
+                        renameAllUsingLabel(msg.label, msg.newName,
+                                WirelessTeamUtil.getNetworkOwnerUUID(world, placerId));
                     }
                     break;
                 case ACTION_TOGGLE_LOCK:
@@ -140,6 +141,30 @@ public class ChannelActionC2SPacket implements IMessage {
                     String tileLabel = LabelNetworkRegistry.normalizeLabel(t.getLabelForDisplay());
                     if (label.equals(tileLabel)) {
                         t.clearLabel();
+                    }
+                }
+            }
+        }
+
+        /**
+         * v0.5.4：让所有正在使用被重命名频道的已加载收发器跟随改名。
+         * 与 {@link #disconnectAllUsingLabel} 相同的遍历方式：同归属者 + 标签（normalize 后）匹配旧名
+         * 的收发器统一 applyLabel(新名)，保证各端点的显示名与频道列表一致。
+         */
+        private static void renameAllUsingLabel(String oldRawLabel, String newRawLabel, java.util.UUID owner) {
+            String oldLabel = LabelNetworkRegistry.normalizeLabel(oldRawLabel);
+            String newLabel = LabelNetworkRegistry.normalizeLabel(newRawLabel);
+            if (oldLabel == null || newLabel == null) return;
+            for (net.minecraft.world.WorldServer ws : DimensionManager.getWorlds()) {
+                if (ws == null || ws.isRemote) continue;
+                for (Object o : ws.loadedTileEntityList.toArray()) {
+                    if (!(o instanceof LabeledWirelessTransceiverTile)) continue;
+                    LabeledWirelessTransceiverTile t = (LabeledWirelessTransceiverTile) o;
+                    java.util.UUID tileOwner = WirelessTeamUtil.getNetworkOwnerUUID(ws, t.getPlacerId());
+                    if (!owner.equals(tileOwner)) continue;
+                    String tileLabel = LabelNetworkRegistry.normalizeLabel(t.getLabelForDisplay());
+                    if (oldLabel.equals(tileLabel)) {
+                        t.applyLabel(newLabel);
                     }
                 }
             }
