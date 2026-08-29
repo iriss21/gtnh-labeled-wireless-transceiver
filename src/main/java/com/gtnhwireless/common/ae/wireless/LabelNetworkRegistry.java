@@ -5,8 +5,10 @@ import com.gtnhwireless.reference.Reference;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
+import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
 import java.util.ArrayList;
@@ -188,7 +190,31 @@ public class LabelNetworkRegistry extends WorldSavedData {
         // v0.5.4：记录重命名别名，供未加载区块的收发器重载时把旧名解析到新名并跟随
         renameAlias.put(new LabelKey(dim, oldLabel, owner), newLabel);
         markDirty();
+        // v0.5.6：让该网络的所有在线端点立即跟随改名。
+        // 此前（v0.5.4）由 ChannelActionC2SPacket 遍历全部已加载方块实体 + owner 匹配，
+        // 实测个别场景命中不到（遍历时机 / 归属匹配差异），导致其他收发器仍显示旧名。
+        // 这里直接使用本网络自身的 endpoints 集合（在线端点的权威记录），
+        // 对每个端点坐标查 tile 无条件 applyLabel——同一频道的所有在线端点必然全部跟随。
+        renameAllEndpoints(level, newLabel, owner, dim);
         return true;
+    }
+
+    /**
+     * v0.5.6：重命名后让该网络的所有在线端点（endpoints 集合）立即跟随改名。
+     * 端点对应的 tile 已加载时直接 applyLabel（触发描述包同步，客户端 GUI「当前」跟随刷新）；
+     * tile 未加载（chunk 已卸载，端点已从集合移除）时由 {@link #resolveRenamedLabel} 在重载后兜底。
+     */
+    private void renameAllEndpoints(World level, String newLabel, UUID owner, int dim) {
+        LabelNetwork net = networks.get(new LabelKey(dim, newLabel, owner));
+        if (net == null) return;
+        for (EndpointRef ref : new ArrayList<>(net.endpoints)) {
+            WorldServer ws = DimensionManager.getWorld(ref.dim < 0 ? 0 : ref.dim);
+            if (ws == null || ws.isRemote) continue;
+            TileEntity te = ws.getTileEntity(ref.x, ref.y, ref.z);
+            if (te instanceof com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) {
+                ((com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) te).applyLabel(newLabel);
+            }
+        }
     }
 
     /**
