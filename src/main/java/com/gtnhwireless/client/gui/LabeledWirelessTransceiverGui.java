@@ -177,6 +177,10 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             if (selectedLabel != null) {
                 String newLabel = this.labelField.getText().trim();
                 if (!newLabel.isEmpty() && !newLabel.equals(selectedLabel)) {
+                    // v0.5.4：仅当被重命名的频道正是本收发器当前标签时，才乐观更新"当前"显示
+                    // （重命名其他频道不会改变本收发器的标签；无条件更新会闪烁错误名称，
+                    //   虽会被服务端权威回显纠正，但显示上误导）。
+                    boolean wasCurrent = selectedLabel.equals(localCurrentLabel);
                     SetLabelC2SPacket.sendChannelAction(
                             SetLabelC2SPacket.ACTION_RENAME,
                             tile.xCoord, tile.yCoord, tile.zCoord, selectedLabel, newLabel);
@@ -186,7 +190,9 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                         else channelList.add(newLabel);
                     }
                     selectedLabel = newLabel;
-                    localCurrentLabel = newLabel; // 乐观更新
+                    if (wasCurrent) {
+                        localCurrentLabel = newLabel; // 乐观更新
+                    }
                     refreshFilter();
                 }
             }
