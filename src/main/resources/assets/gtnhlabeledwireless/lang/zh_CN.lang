@@ -18,3 +18,7 @@ gtnhlabeledwireless.gui.unlock=解锁
 gtnhlabeledwireless.gui.locked_status=已锁定：扳手不可拆卸
 gtnhlabeledwireless.gui.unlocked_status=未锁定
 gtnhlabeledwireless.chat.locked=已锁定，无法用扳手拆卸
+
+# Search (v0.5.2)
+gtnhlabeledwireless.gui.search=搜索频道
+gtnhlabeledwireless.gui.search_hint=频道名或拼音首字母
