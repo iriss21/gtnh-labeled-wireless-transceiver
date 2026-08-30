@@ -2,7 +2,7 @@
   {
     "modid": "gtnhlabeledwireless",
     "name": "GTNH Labeled Wireless Transceiver",
-    "description": "标签无线收发器：跨维度传输 AE2 频道与电能。移植自 ExtendedAE Plus，适配 GTNH 2.8.4 (MC 1.7.10)。",
+    "description": "标签无线收发：跨维度传输 AE2 频道与电能。适配 GTNH 2.8.4 (MC 1.7.10)。",
     "version": "${modVersion}",
     "mcversion": "${minecraftVersion}",
     "url": "",
