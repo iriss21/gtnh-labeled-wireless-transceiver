@@ -34,7 +34,7 @@ import java.util.UUID;
  * - 为每个标签网络创建一个虚拟枢纽节点（{@link VirtualLabelNodeHost}），所有同标签收发器连到它；
  * - 记录在线端点；端点卸载后由 {@link #unregister(IWirelessEndpoint)} 移除引用。
  *
- * 移植自 EAEP 的 LabelNetworkRegistry。关键差异：
+ * 关键实现说明：
  * 1.7.10 没有 SavedData 的 computeIfAbsent，改用 MapStorage.loadData/setData；
  * 跨维度默认关闭，枢纽节点创建在收发器所在维度（dim==-1 表示跨维，落到主世界）。
  */
