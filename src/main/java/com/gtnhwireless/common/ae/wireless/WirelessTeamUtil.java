@@ -9,7 +9,7 @@ import java.util.UUID;
 /**
  * 网络所有者工具。
  *
- * EAEP 1.20 使用 FTBTeams 做队伍隔离；GTNH 1.7.10 的队伍系统由 ServerUtilities 提供。
+ * GTNH 1.7.10 的队伍系统由 ServerUtilities 提供。
  * 规则（v0.5.0）：
  * - 玩家属于某 FTB 队伍：频道所有者 = 由队伍 ID 派生的固定 UUID（同队成员共享频道，
  *   跨队伍隔离——不同队伍的成员互相看不到对方的频道列表，也无法加入对方的频道）；
