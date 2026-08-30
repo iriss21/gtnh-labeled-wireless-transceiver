@@ -32,7 +32,7 @@ import java.util.UUID;
  * - 活动注册（加入 WirelessActiveRegistry 供服务端周期 tick）；
  * - 常见 NBT 读写骨架与描述包同步（客户端 GUI 用）。
  *
- * 1.7.10 与 EAEP 1.20 的最大差异：没有 IManagedGridNode / GridHelper.createManagedNode，
+ * 1.7.10 没有 IManagedGridNode / GridHelper.createManagedNode（那是 AE2 1.20 的 API），
  * 改为持有 AENetworkProxy 并手动管理 onReady/invalidate。
  *
  * 关键的 AE2 1.7.10 约定：
