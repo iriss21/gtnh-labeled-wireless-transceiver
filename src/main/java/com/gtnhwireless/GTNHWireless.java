@@ -24,7 +24,7 @@ import net.minecraft.item.ItemStack;
 
 /**
  * 标签无线收发器（Labeled Wireless Transceiver）—— 跨维度 AE2 频道与电能传输模组。
- * 移植自 ExtendedAE Plus，适配 GTNH 2.8.4（MC 1.7.10）。
+ * 适配 GTNH 2.8.4（MC 1.7.10）的跨维度 AE2 频道与电能传输模组。
  */
 @Mod(modid = Reference.MODID, name = Reference.NAME, version = Reference.VERSION,
         dependencies = Reference.DEPENDENCIES)
