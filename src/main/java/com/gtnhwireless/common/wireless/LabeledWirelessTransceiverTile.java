@@ -17,7 +17,7 @@ import java.util.UUID;
  * 通过 {@link LabelNetworkRegistry} 把同标签的所有收发器连到同一个虚拟枢纽节点，
  * 从而把多个本地 AE2 网络合并成一个网格，实现跨距离无线共享存储 / 合成。
  *
- * 移植自 EAEP 的 LabeledWirelessTransceiverBlockEntity。
+ * 标签无线收发器的 TileEntity 实现，通过虚拟枢纽将多个收发器合并为一个 AE2 网格。
  */
 public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
 
