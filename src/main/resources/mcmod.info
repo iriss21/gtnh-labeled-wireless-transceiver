@@ -7,7 +7,7 @@
     "mcversion": "${minecraftVersion}",
     "url": "",
     "updateUrl": "",
-    "authorList": ["GaLi (EAEP 原作者)", "GTNH Wireless Port 移植"],
+    "authorList": ["s21"],
     "logoFile": "",
     "dependencies": [
       {
