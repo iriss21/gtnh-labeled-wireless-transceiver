@@ -1,13 +1,11 @@
 # GTNH Labeled Wireless Transceiver（标签无线收发器）
 
-把「标签无线收发器」移植到 **Minecraft 1.7.10 / GTNH**
+为 **Minecraft 1.7.10 / GTNH** 开发的标签无线收发器
 
 
 > **AI 构建声明**：本仓库的全部代码由 AI 模型（D指导）生成，无任何人类手写代码，连github都是AI上传，纯石山。
 
-> 移植过程基于 [ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（LGPL-3.0）的
-> 公开设计与 [AE-Wireless-Transceiver](https://github.com/mynamexiaopiao/AE-Wireless-Transceiver)
-> 的设计思路，未复制上述仓库的任何源码文件；AE2 网格机制经字节码级反汇编分析后独立实现。
+> 公开设计参考：AE2 网格机制经字节码级反汇编分析后独立实现。
 > 详见下方「许可」。
 
 ## 特性
@@ -27,10 +25,17 @@
 ## 版本历史
 
 ### v0.5.7（当前）
-- 修复鼠标滚轮翻页失效
+- 修复鼠标滚轮翻页失效（GUI 坐标换算分子分母颠倒，指针在频道列表区域内滚动不生效）
 
 ### v0.5.6
-- 修复重命名频道后其他收发器不跟随改名
+- 重命名频道后，改用频道网络自身的端点集合确定性跟随（同一频道的所有在线收发器必然同步改名并刷新显示）
+
+### v0.5.5
+- 修复重命名后 GUI「当前」显示不跟随（防止旧回显/旧描述包把显示打回旧名）
+- 删除 GUI 中重叠的「频道列表」标题文字
+
+### v0.5.4
+- 修复重命名频道后其他收发器不跟随改名（含未加载区块收发器重载后的旧名解析）
 
 ### v0.5.3
 - 合成配方更新
@@ -59,11 +64,8 @@
 
 ## 许可
 
-本项目代码由 **AI 模型生成**（见顶部声明），移植自
-[GaLicn/ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（**LGPL-3.0**）的
-标签无线收发器部分，作为其衍生改编作品以 **LGPL-3.0** 协议发布（见仓库内 `LICENSE`）。
+本项目代码由 **AI 模型生成**（见顶部声明），以 **LGPL-3.0** 协议发布（见仓库内 `LICENSE`）。
 主要设计参考：
-- [GaLicn/ExtendedAE_Plus](https://github.com/GaLicn/ExtendedAE_Plus)（LGPL-3.0）——标签无线收发器原版设计；
-- [mynamexiaopiao/AE-Wireless-Transceiver](https://github.com/mynamexiaopiao/AE-Wireless-Transceiver)（仓库未声明许可证，仅参考其跨维度无线传输思路，未使用其代码）。
+- [mynamexiaopiao/AE-Wireless-Transceiver](https://github.com/mynamexioapiao/AE-Wireless-Transceiver)（仓库未声明许可证，仅参考其跨维度无线传输思路，未使用其代码）。
 
 与 AE2（LGPL-3.0）为编译期/运行期接口依赖关系，未包含或分发 AE2 源码/二进制；AE2 二进制由 GTNH 实例提供。
