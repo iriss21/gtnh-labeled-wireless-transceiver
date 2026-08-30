@@ -19,7 +19,7 @@ import java.util.EnumSet;
  * 同一标签下的所有标签无线收发器，其 in-world 节点都会与此枢纽节点建立直接连接，
  * 从而把多个本地 AE2 网络合并成同一个网格，实现跨距离无线共享存储 / 合成。
  *
- * 对应 EAEP 1.20 的 VirtualLabelNodeHost。1.7.10 用 AENetworkProxy(inWorld=false) 实现。
+ * 虚拟枢纽节点宿主，1.7.10 用 AENetworkProxy(inWorld=false) 实现。
  */
 public class VirtualLabelNodeHost implements IGridProxyable {
 
