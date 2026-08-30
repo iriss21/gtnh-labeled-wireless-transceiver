@@ -9,7 +9,7 @@ import appeng.api.networking.IGridNode;
  * 标签无线收发器的连接器：把收发器的 in-world 节点连接到标签网络的虚拟枢纽节点。
  *
  * 不负责标签的注册 / 反注册，只维持物理连接。
- * 移植自 EAEP 的 LabelLink（去掉了 ConnectionWrapper，直接用 IGridConnection）。
+ * 直接用 IGridConnection 维持物理连接。
  */
 public class LabelLink {
 
