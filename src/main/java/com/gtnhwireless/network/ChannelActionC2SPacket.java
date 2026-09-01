@@ -27,6 +27,8 @@ public class ChannelActionC2SPacket implements IMessage {
     public static final int ACTION_RENAME = 1;
     /** 切换本收发器的锁定状态（锁定后无法用扳手拆卸）。v0.5.0。 */
     public static final int ACTION_TOGGLE_LOCK = 2;
+    /** 切换频道的收藏状态（v0.5.8）。收藏的频道置顶显示且禁止删除。 */
+    public static final int ACTION_TOGGLE_FAVORITE = 3;
 
     private int action;
     private int x, y, z;
@@ -95,6 +97,10 @@ public class ChannelActionC2SPacket implements IMessage {
 
             switch (msg.action) {
                 case ACTION_DELETE:
+                    // v0.5.8：收藏的频道禁止删除（服务端强制保护，GUI 按钮同时禁用）。
+                    if (reg.isFavorite(world, msg.label, placerId)) {
+                        break;
+                    }
                     reg.removeNetwork(world, msg.label, placerId);
                     // 断开（清空标签）所有正在使用该频道的已加载收发器
                     disconnectAllUsingLabel(msg.label,
@@ -111,16 +117,24 @@ public class ChannelActionC2SPacket implements IMessage {
                 case ACTION_TOGGLE_LOCK:
                     tile.setLocked(!tile.isLocked());
                     break;
+                case ACTION_TOGGLE_FAVORITE:
+                    // v0.5.8：切换收藏状态
+                    reg.setFavorite(world, msg.label, placerId,
+                            !reg.isFavorite(world, msg.label, placerId));
+                    break;
             }
 
             // 把最新频道列表 + 本收发器当前标签权威回显推回客户端，确保 GUI 实时刷新
             java.util.List<String> names = new java.util.ArrayList<>();
+            java.util.List<java.lang.Boolean> favorites = new java.util.ArrayList<>();
             for (LabelNetworkRegistry.LabelNetworkSnapshot s :
                     LabelNetworkRegistry.get(world).listNetworks(world, placerId)) {
                 names.add(s.label);
+                favorites.add(s.favorite);
             }
             PacketHandler.INSTANCE.sendTo(new ChannelListS2CPacket(
-                    names, tile.xCoord, tile.yCoord, tile.zCoord, tile.getLabelForDisplay()), player);
+                    names, favorites, tile.xCoord, tile.yCoord, tile.zCoord,
+                    tile.getLabelForDisplay()), player);
             return null;
         }
 
