@@ -245,11 +245,33 @@ public class LabelNetworkRegistry extends WorldSavedData {
         for (Map.Entry<LabelKey, LabelNetwork> e : networks.entrySet()) {
             LabelKey k = e.getKey();
             if (k.owner.equals(owner) && k.dim == dim) {
-                list.add(new LabelNetworkSnapshot(k.label, e.getValue().channel));
+                list.add(new LabelNetworkSnapshot(k.label, e.getValue().channel, e.getValue().favorite));
             }
         }
         list.sort(Comparator.comparingLong(a -> a.channel));
         return list;
+    }
+
+    /**
+     * 收藏 / 取消收藏频道（v0.5.8）。收藏状态持久化到网络 NBT；
+     * 被收藏的频道服务端拒绝删除（{@link #removeNetwork} 与 {@code ChannelActionC2SPacket.ACTION_DELETE} 双保险）。
+     *
+     * @return true 表示操作生效（频道存在）；false 表示频道不存在
+     */
+    public boolean setFavorite(World level, String rawLabel, UUID placerId, boolean favorite) {
+        LabelNetwork net = getNetwork(level, rawLabel, placerId);
+        if (net == null) return false;
+        if (net.favorite != favorite) {
+            net.favorite = favorite;
+            markDirty();
+        }
+        return true;
+    }
+
+    /** 频道是否已被收藏（v0.5.8）。频道不存在返回 false。 */
+    public boolean isFavorite(World level, String rawLabel, UUID placerId) {
+        LabelNetwork net = getNetwork(level, rawLabel, placerId);
+        return net != null && net.favorite;
     }
 
     @Override
@@ -265,6 +287,7 @@ public class LabelNetworkRegistry extends WorldSavedData {
             nbt.setLong("owner", k.owner.getMostSignificantBits());
             nbt.setLong("ownerL", k.owner.getLeastSignificantBits());
             nbt.setLong("channel", v.channel);
+            nbt.setBoolean("favorite", v.favorite);
             NBTTagList eps = new NBTTagList();
             for (EndpointRef r : v.endpoints) {
                 NBTTagCompound rtag = new NBTTagCompound();
@@ -310,6 +333,7 @@ public class LabelNetworkRegistry extends WorldSavedData {
             UUID owner = new UUID(hi, lo);
             long channel = nbt.getLong("channel");
             LabelNetwork net = new LabelNetwork(dim, label, owner, channel);
+            net.favorite = nbt.getBoolean("favorite"); // 兼容旧档：无键默认 false
             NBTTagList eps = nbt.getTagList("endpoints", 10);
             for (int j = 0; j < eps.tagCount(); j++) {
                 NBTTagCompound rtag = eps.getCompoundTagAt(j);
@@ -343,10 +367,13 @@ public class LabelNetworkRegistry extends WorldSavedData {
 
         public final String label;
         public final long channel;
+        /** 是否被收藏（v0.5.8）。收藏的频道在 GUI 列表置顶且禁止删除。 */
+        public final boolean favorite;
 
-        public LabelNetworkSnapshot(String label, long channel) {
+        public LabelNetworkSnapshot(String label, long channel, boolean favorite) {
             this.label = label;
             this.channel = channel;
+            this.favorite = favorite;
         }
     }
 
@@ -413,6 +440,12 @@ public class LabelNetworkRegistry extends WorldSavedData {
          * 仍引用本对象的 LabelLink 据此判定目标已失效并立即断开，防止频道复活。
          */
         volatile boolean deleted;
+
+        /**
+         * 是否被收藏（v0.5.8）。收藏状态随网络 NBT 持久化；
+         * 被收藏的频道服务端拒绝删除（防止误删常用频道）。
+         */
+        volatile boolean favorite;
 
         VirtualLabelNodeHost virtualHost;
 
