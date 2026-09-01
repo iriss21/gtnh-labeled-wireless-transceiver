@@ -16,6 +16,8 @@ gtnhlabeledwireless.gui.lock=锁定
 gtnhlabeledwireless.gui.unlock=解锁
 gtnhlabeledwireless.gui.locked_status=已锁定：扳手不可拆卸
 gtnhlabeledwireless.gui.unlocked_status=未锁定
+gtnhlabeledwireless.gui.favorite=收藏
+gtnhlabeledwireless.gui.unfavorite=取消收藏
 gtnhlabeledwireless.chat.locked=已锁定，无法用扳手拆卸
 
 # Search (v0.5.2)
