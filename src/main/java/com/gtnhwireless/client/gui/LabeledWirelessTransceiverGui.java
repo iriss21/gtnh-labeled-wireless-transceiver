@@ -43,6 +43,8 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private static final int BTN_DELETE = 1;
     private static final int BTN_RENAME = 2;
     private static final int BTN_LOCK = 3;
+    /** v0.5.8：收藏开关（收藏的频道置顶显示且禁止删除）。 */
+    private static final int BTN_FAVORITE = 4;
 
     // 左侧频道列表区域（相对 GUI 左上角）
     private static final int LIST_LEFT = 8;
@@ -84,6 +86,8 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private GuiButton deleteButton;
     private GuiButton renameButton;
     private GuiButton lockButton;
+    /** v0.5.8：收藏开关按钮（选中频道后点击收藏/取消收藏）。 */
+    private GuiButton favoriteButton;
 
     /** 完整频道列表数据（label 名称列表），来自 {@link ChannelListS2CPacket#LATEST}。 */
     private final List<String> channelList = new ArrayList<>();
@@ -106,6 +110,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private String pendingRenameNew = null;
     /** 列表滚动偏移（基于 filteredList）。 */
     private int scrollOffset = 0;
+    /**
+     * v0.5.8：收藏的频道名集合（客户端缓存，来自
+     * {@link ChannelListS2CPacket#LATEST_FAVORITES}）。收藏的频道列表置顶 + 禁止删除。
+     */
+    private final java.util.Set<String> favoriteSet = new java.util.HashSet<>();
 
     public LabeledWirelessTransceiverGui(LabeledWirelessTransceiverContainer container,
                                          LabeledWirelessTransceiverTile tile) {
@@ -145,11 +154,15 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         // v0.5.0：锁定开关（锁定后无法用扳手拆卸）
         this.lockButton = new GuiButton(BTN_LOCK, this.guiLeft + BTN_COL_X, btnY + BTN_GAP * 3,
                 BTN_COL_W, 16, lockButtonLabel());
+        // v0.5.8：收藏开关（选中频道后收藏/取消收藏；收藏的频道置顶且禁止删除）
+        this.favoriteButton = new GuiButton(BTN_FAVORITE, this.guiLeft + BTN_COL_X, btnY + BTN_GAP * 4,
+                BTN_COL_W, 16, favoriteButtonLabel());
 
         this.buttonList.add(this.addButton);
         this.buttonList.add(this.deleteButton);
         this.buttonList.add(this.renameButton);
         this.buttonList.add(this.lockButton);
+        this.buttonList.add(this.favoriteButton);
 
         this.localCurrentLabel = tile.getLabelForDisplay();
         this.lastTileLabel = tile.getLabelForDisplay();
@@ -172,7 +185,8 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                 localCurrentLabel = text; // 乐观更新
             }
         } else if (button == this.deleteButton) {
-            if (selectedLabel != null) {
+            // v0.5.8：收藏的频道禁止删除（按钮已禁用，这里再兜底一次）
+            if (selectedLabel != null && !favoriteSet.contains(selectedLabel)) {
                 SetLabelC2SPacket.sendChannelAction(
                         SetLabelC2SPacket.ACTION_DELETE,
                         tile.xCoord, tile.yCoord, tile.zCoord, selectedLabel, "");
@@ -193,6 +207,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                     // v0.5.5：登记重命名追踪，防止旧回显/旧描述包把「当前」打回旧名
                     this.pendingRenameOld = selectedLabel;
                     this.pendingRenameNew = newLabel;
+                    // v0.5.8：收藏状态跟随新名（服务端回显也会纠正，本地先行保证即时排序）
+                    if (favoriteSet.contains(selectedLabel)) {
+                        favoriteSet.remove(selectedLabel);
+                        favoriteSet.add(newLabel);
+                    }
                     if (!channelList.contains(newLabel)) {
                         int idx = channelList.indexOf(selectedLabel);
                         if (idx >= 0) channelList.set(idx, newLabel);
@@ -210,6 +229,19 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             SetLabelC2SPacket.sendChannelAction(
                     SetLabelC2SPacket.ACTION_TOGGLE_LOCK,
                     tile.xCoord, tile.yCoord, tile.zCoord, "", "");
+        } else if (button == this.favoriteButton) {
+            // v0.5.8：收藏 / 取消收藏选中频道；服务端持久化 + 回显后由 refreshChannelList 校正权威状态
+            if (selectedLabel != null) {
+                SetLabelC2SPacket.sendChannelAction(
+                        SetLabelC2SPacket.ACTION_TOGGLE_FAVORITE,
+                        tile.xCoord, tile.yCoord, tile.zCoord, selectedLabel, "");
+                if (favoriteSet.contains(selectedLabel)) {
+                    favoriteSet.remove(selectedLabel);
+                } else {
+                    favoriteSet.add(selectedLabel);
+                }
+                refreshFilter(); // 置顶排序即时生效
+            }
         }
     }
 
@@ -345,6 +377,15 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             this.lockButton.displayString = label;
         }
 
+        // v0.5.8：收藏按钮文案随选中项收藏状态刷新；
+        // 删除按钮对收藏频道禁用（服务端同样拒绝删除，双保险）
+        String favLabel = favoriteButtonLabel();
+        if (!favLabel.equals(this.favoriteButton.displayString)) {
+            this.favoriteButton.displayString = favLabel;
+        }
+        this.favoriteButton.enabled = selectedLabel != null;
+        this.deleteButton.enabled = selectedLabel != null && !favoriteSet.contains(selectedLabel);
+
         // v0.5.5：重命名追踪——先依据权威频道列表判断重命名是否成功。
         // 新名已出现在列表中 = 服务端已确认重命名（忽略旧名来源的覆盖，等待新名回显）；
         // 新名未出现 = 重命名失败（如目标名已占用），清除追踪并接受回显纠正回旧状态。
@@ -393,8 +434,9 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             }
         }
 
-        // 轮询静态缓存刷新频道列表
-        if (!ChannelListS2CPacket.LATEST.equals(this.channelList)) {
+        // 轮询静态缓存刷新频道列表（内容变化或收藏状态变化都触发）
+        if (!ChannelListS2CPacket.LATEST.equals(this.channelList)
+                || !ChannelListS2CPacket.LATEST_FAVORITES.equals(this.favoriteSet)) {
             refreshChannelList();
         }
     }
@@ -403,6 +445,9 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     private void refreshChannelList() {
         channelList.clear();
         channelList.addAll(ChannelListS2CPacket.LATEST);
+        // v0.5.8：同步权威收藏状态（服务端回显为准，覆盖本地乐观切换）
+        favoriteSet.clear();
+        favoriteSet.addAll(ChannelListS2CPacket.LATEST_FAVORITES);
         if (selectedLabel != null && !channelList.contains(selectedLabel)) {
             selectedLabel = null;
         }
@@ -412,15 +457,16 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
     /** 根据搜索关键词重新过滤列表并重置滚动偏移。 */
     private void refreshFilter() {
         filteredList.clear();
-        if (searchQuery.isEmpty()) {
-            filteredList.addAll(channelList);
-        } else {
-            for (String ch : channelList) {
-                if (PinyinSearchUtil.matches(searchQuery, ch)) {
-                    filteredList.add(ch);
-                }
+        // v0.5.8：收藏的频道置顶（稳定排序——收藏/非收藏各自保持频道原始顺序）
+        java.util.List<String> fav = new java.util.ArrayList<>();
+        java.util.List<String> rest = new java.util.ArrayList<>();
+        for (String ch : channelList) {
+            if (searchQuery.isEmpty() || PinyinSearchUtil.matches(searchQuery, ch)) {
+                (favoriteSet.contains(ch) ? fav : rest).add(ch);
             }
         }
+        filteredList.addAll(fav);
+        filteredList.addAll(rest);
         // 检查当前选中项是否仍在过滤结果中
         if (selectedLabel != null && !filteredList.contains(selectedLabel)) {
             selectedLabel = null;
@@ -433,6 +479,13 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         return I18n.format(tile.isLocked()
                 ? "gtnhlabeledwireless.gui.unlock"
                 : "gtnhlabeledwireless.gui.lock");
+    }
+
+    /** v0.5.8：收藏按钮文案（选中频道是否已收藏 → 取消收藏 / 收藏）。 */
+    private String favoriteButtonLabel() {
+        return I18n.format(selectedLabel != null && favoriteSet.contains(selectedLabel)
+                ? "gtnhlabeledwireless.gui.unfavorite"
+                : "gtnhlabeledwireless.gui.favorite");
     }
 
     @Override
@@ -470,6 +523,7 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             int entryTop = listTop + i * LIST_ENTRY_HEIGHT;
             boolean isSelected = entry.equals(selectedLabel);
             boolean isCurrent = entry.equals(currentLabel);
+            boolean isFav = favoriteSet.contains(entry); // v0.5.8
 
             if (isSelected) {
                 drawRect(listLeft + 1, entryTop,
@@ -478,9 +532,14 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
             }
 
             int textColor = isCurrent ? 0x55FF55 : (isSelected ? 0xFFFFFF : 0xCCCCCC);
-            String shown = trimToWidth(entry, LIST_CONTENT_WIDTH - 14);
-            this.fontRendererObj.drawString(shown, listLeft + 3, entryTop + 1, textColor);
+            // v0.5.8：收藏条目文字右移让出星标位置
+            String shown = trimToWidth(entry, LIST_CONTENT_WIDTH - 14 - (isFav ? 9 : 0));
+            this.fontRendererObj.drawString(shown, listLeft + (isFav ? 13 : 3), entryTop + 1, textColor);
 
+            if (isFav) {
+                // 金色星标（★），与右侧的「当前」标记"*"区分
+                this.fontRendererObj.drawString("\u2605", listLeft + 3, entryTop + 1, 0xFFD700);
+            }
             if (isCurrent) {
                 this.fontRendererObj.drawString("*", listLeft + LIST_CONTENT_WIDTH - 8, entryTop + 1, 0x55FF55);
             }
