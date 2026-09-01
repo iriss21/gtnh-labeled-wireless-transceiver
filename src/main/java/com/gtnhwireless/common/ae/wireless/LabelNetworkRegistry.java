@@ -1,6 +1,7 @@
 package com.gtnhwireless.common.ae.wireless;
 
 import com.gtnhwireless.common.ModContent;
+import com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile;
 import com.gtnhwireless.reference.Reference;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -196,32 +197,114 @@ public class LabelNetworkRegistry extends WorldSavedData {
         // v0.5.9：修复跨维度坐标查找 bug——旧实现按 EndpointRef.dim 猜维度（跨维度模式下
         // dim=-1 一律查主世界），非主世界维度的端点永远找不到，无法跟随改名。
         // 改为遍历所有已加载维度，按 归属 + 旧标签 匹配，任意维度确定性生效。
-        renameAllEndpoints(oldLabel, newLabel, owner);
+        // v0.5.10：改用 频道号（channel）匹配——channel 是网络身份，重命名不改变它；
+        // tile 只要连的是该网络，getFrequency() 必然等于 channel，彻底摆脱对标签字符串
+        // raw 形式（空格/大小写）与坐标维度的依赖。标签匹配保留作双保险。
+        // v0.5.11：传播改为「网络自身端点表 + 全维度扫描」双路径，且每个 tile 单独
+        // try/catch——此前单 tile 的 applyLabel 抛异常会中断整轮循环，导致其余已加载
+        // 收发器（含发起重命名的 GUI tile）全部漏改名：注册表已改名（列表只剩新名）、
+        // 但所有收发器仍显示旧名。端点表路径直接采纳新标签（不重新注册，保持原网络），
+        // 扫描路径仍按 频道号 / 归属+旧标签 兜底。
+        renameAllEndpoints(net, oldLabel, newLabel, owner);
         return true;
     }
 
     /**
-     * v0.5.6 / v0.5.9：重命名后让该网络的所有在线端点立即跟随改名。
-     * 遍历所有已加载维度的方块实体：归属（owner）与旧标签（normalize 后）匹配的
-     * 收发器直接 applyLabel（触发描述包同步，客户端 GUI「当前」跟随刷新）。
+     * v0.5.6 / v0.5.9 / v0.5.10 / v0.5.11：重命名后让该网络的所有在线端点立即跟随改名。
+     * 双路径传播：
+     * - 路径 1（v0.5.11 新增，权威）：直接遍历被重命名网络的自身端点表（net.endpoints），
+     *   这些端点是在注册时按归属写入的，与网络 owner 天然一致，无需任何 owner / 标签 /
+     *   频率启发式。按坐标找到已加载 tile 后调用 {@link LabeledWirelessTransceiverTile#adoptRenamedLabel}
+     *   采纳新标签——只改显示名，不重新注册，保持原网络与频道号；
+     * - 路径 2（兜底）：全维度扫描 loadedTileEntityList，主匹配频道号（网络身份，重命名不变），
+     *   兜底匹配归属 + 旧标签（normalize 后，覆盖 frequency 尚未同步的边界），命中后
+     *   applyLabel(新名) 重新注册接入新网络。
+     * 每个 tile 的处理都单独 try/catch：任何单个端点的异常都不会中断整轮传播，
+     * 避免「注册表已改名但所有收发器仍显示旧名」的漏改。
      * tile 未加载（chunk 已卸载，不在 loadedTileEntityList）时由
-     * {@link #resolveRenamedLabel} 在重载后兜底。
+     * {@link #resolveRenamedLabel} 在重载后兜底（tile 端另有频道号自愈兜底）。
      */
-    private void renameAllEndpoints(String oldLabel, String newLabel, UUID owner) {
+    private void renameAllEndpoints(LabelNetwork net, String oldLabel, String newLabel, UUID owner) {
+        java.util.Set<LabeledWirelessTransceiverTile> visited = new java.util.HashSet<>();
+        // 路径 1：网络自身端点表（权威、与 owner 一致、跨维度坐标已固化）
+        if (net != null) {
+            for (EndpointRef r : net.endpoints) {
+                LabeledWirelessTransceiverTile t = findTileByRef(r);
+                if (t != null && visited.add(t)) {
+                    safeAdoptLabel(t, newLabel);
+                }
+            }
+        }
+        // 路径 2：全维度扫描兜底
         for (WorldServer ws : DimensionManager.getWorlds()) {
             if (ws == null || ws.isRemote) continue;
             for (Object o : ws.loadedTileEntityList.toArray()) {
-                if (!(o instanceof com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile)) continue;
-                com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile t =
-                        (com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) o;
+                if (!(o instanceof LabeledWirelessTransceiverTile)) continue;
+                LabeledWirelessTransceiverTile t = (LabeledWirelessTransceiverTile) o;
+                if (!visited.add(t)) continue;
+                if (t.getFrequency() == net.channel()) {
+                    // 已连上该网络：采纳新标签（保持原网络），不重新注册
+                    safeAdoptLabel(t, newLabel);
+                    continue;
+                }
                 UUID tileOwner = WirelessTeamUtil.getNetworkOwnerUUID(ws, t.getPlacerId());
                 if (!owner.equals(tileOwner)) continue;
                 String tl = normalizeLabel(t.getLabelForDisplay());
                 if (oldLabel.equals(tl)) {
-                    t.applyLabel(newLabel);
+                    // frequency 未同步的边界：归属 + 旧标签匹配，重新注册接入新网络
+                    safeApplyLabel(t, newLabel);
                 }
             }
         }
+    }
+
+    /** 按端点坐标在已加载维度中找到对应收发器 tile（跨维度 dim=-1 时搜索所有维度）。 */
+    private LabeledWirelessTransceiverTile findTileByRef(EndpointRef r) {
+        for (WorldServer ws : DimensionManager.getWorlds()) {
+            if (ws == null || ws.isRemote) continue;
+            if (r.dim >= 0 && ws.provider.dimensionId != r.dim) continue;
+            net.minecraft.tileentity.TileEntity te = ws.getTileEntity(r.x, r.y, r.z);
+            if (te instanceof LabeledWirelessTransceiverTile) {
+                return (LabeledWirelessTransceiverTile) te;
+            }
+        }
+        return null;
+    }
+
+    /** 采纳新标签（保持原网络），单 tile 异常不影响其余端点。 */
+    private void safeAdoptLabel(LabeledWirelessTransceiverTile t, String label) {
+        try {
+            t.adoptRenamedLabel(label);
+        } catch (Throwable ignored) {
+            // 单个端点处理失败不能中断整轮重命名传播
+        }
+    }
+
+    /** 重新注册接入新网络（用于 frequency 未同步的兜底分支），单 tile 异常不影响其余端点。 */
+    private void safeApplyLabel(LabeledWirelessTransceiverTile t, String label) {
+        try {
+            t.applyLabel(label);
+        } catch (Throwable ignored) {
+            // 单个端点处理失败不能中断整轮重命名传播
+        }
+    }
+
+    /**
+     * 按频道号查找网络（v0.5.11）。channel 是网络身份（单调分配、不复用、重命名不变），
+     * 比标签 / 归属派生更权威：用于 tile 端「标签查找失败时按频道找回真实网络并采纳其
+     * 当前标签」的自愈兜底，不依赖 ServerUtilities 队伍查询的时序一致性。
+     * 已删除的网络返回 null（禁止复活）。
+     *
+     * @return 频道号对应的网络；不存在或已删除时返回 null
+     */
+    public LabelNetwork getNetworkByChannel(long channel) {
+        if (channel <= 0) return null;
+        for (LabelNetwork net : networks.values()) {
+            if (!net.deleted && net.channel == channel) {
+                return net;
+            }
+        }
+        return null;
     }
 
     /**
@@ -465,6 +548,11 @@ public class LabelNetworkRegistry extends WorldSavedData {
 
         public long channel() {
             return channel;
+        }
+
+        /** 网络当前标签（重命名后为新名）。供 tile 端做频道号自愈核对。 */
+        public String label() {
+            return label;
         }
 
         public IGridNode node() {
