@@ -141,6 +141,9 @@ public class ChannelActionC2SPacket implements IMessage {
         /**
          * 断开所有正在使用指定频道的已加载收发器：清空其标签并同步（GUI 显示"无"、方块变回未连接材质）。
          * 遍历所有已加载维度的方块实体列表；这是一次性的低频操作（用户点击删除），开销可接受。
+         *
+         * v0.5.11：每个 tile 单独 try/catch——单个端点异常不得中断整轮遍历，
+         * 否则会连累 onMessage 末尾的频道列表/当前标签回显包丢失。
          */
         private static void disconnectAllUsingLabel(String rawLabel, java.util.UUID owner) {
             String label = LabelNetworkRegistry.normalizeLabel(rawLabel);
@@ -154,7 +157,11 @@ public class ChannelActionC2SPacket implements IMessage {
                     if (!owner.equals(tileOwner)) continue;
                     String tileLabel = LabelNetworkRegistry.normalizeLabel(t.getLabelForDisplay());
                     if (label.equals(tileLabel)) {
-                        t.clearLabel();
+                        try {
+                            t.clearLabel();
+                        } catch (Throwable ignored) {
+                            // 单个端点异常不能中断整轮断开（否则其余端点漏断且回显包丢失）
+                        }
                     }
                 }
             }
@@ -164,6 +171,9 @@ public class ChannelActionC2SPacket implements IMessage {
          * v0.5.4：让所有正在使用被重命名频道的已加载收发器跟随改名。
          * 与 {@link #disconnectAllUsingLabel} 相同的遍历方式：同归属者 + 标签（normalize 后）匹配旧名
          * 的收发器统一 applyLabel(新名)，保证各端点的显示名与频道列表一致。
+         *
+         * v0.5.11：每个 tile 单独 try/catch——单个端点异常不得中断整轮遍历，
+         * 否则会连累 onMessage 末尾的频道列表/当前标签回显包丢失（客户端列表停留在旧状态）。
          */
         private static void renameAllUsingLabel(String oldRawLabel, String newRawLabel, java.util.UUID owner) {
             String oldLabel = LabelNetworkRegistry.normalizeLabel(oldRawLabel);
@@ -178,7 +188,11 @@ public class ChannelActionC2SPacket implements IMessage {
                     if (!owner.equals(tileOwner)) continue;
                     String tileLabel = LabelNetworkRegistry.normalizeLabel(t.getLabelForDisplay());
                     if (oldLabel.equals(tileLabel)) {
-                        t.applyLabel(newLabel);
+                        try {
+                            t.applyLabel(newLabel);
+                        } catch (Throwable ignored) {
+                            // 单个端点异常不能中断整轮改名（否则其余端点漏改且回显包丢失）
+                        }
                     }
                 }
             }
