@@ -193,26 +193,33 @@ public class LabelNetworkRegistry extends WorldSavedData {
         // v0.5.6：让该网络的所有在线端点立即跟随改名。
         // 此前（v0.5.4）由 ChannelActionC2SPacket 遍历全部已加载方块实体 + owner 匹配，
         // 实测个别场景命中不到（遍历时机 / 归属匹配差异），导致其他收发器仍显示旧名。
-        // 这里直接使用本网络自身的 endpoints 集合（在线端点的权威记录），
-        // 对每个端点坐标查 tile 无条件 applyLabel——同一频道的所有在线端点必然全部跟随。
-        renameAllEndpoints(level, newLabel, owner, dim);
+        // v0.5.9：修复跨维度坐标查找 bug——旧实现按 EndpointRef.dim 猜维度（跨维度模式下
+        // dim=-1 一律查主世界），非主世界维度的端点永远找不到，无法跟随改名。
+        // 改为遍历所有已加载维度，按 归属 + 旧标签 匹配，任意维度确定性生效。
+        renameAllEndpoints(oldLabel, newLabel, owner);
         return true;
     }
 
     /**
-     * v0.5.6：重命名后让该网络的所有在线端点（endpoints 集合）立即跟随改名。
-     * 端点对应的 tile 已加载时直接 applyLabel（触发描述包同步，客户端 GUI「当前」跟随刷新）；
-     * tile 未加载（chunk 已卸载，端点已从集合移除）时由 {@link #resolveRenamedLabel} 在重载后兜底。
+     * v0.5.6 / v0.5.9：重命名后让该网络的所有在线端点立即跟随改名。
+     * 遍历所有已加载维度的方块实体：归属（owner）与旧标签（normalize 后）匹配的
+     * 收发器直接 applyLabel（触发描述包同步，客户端 GUI「当前」跟随刷新）。
+     * tile 未加载（chunk 已卸载，不在 loadedTileEntityList）时由
+     * {@link #resolveRenamedLabel} 在重载后兜底。
      */
-    private void renameAllEndpoints(World level, String newLabel, UUID owner, int dim) {
-        LabelNetwork net = networks.get(new LabelKey(dim, newLabel, owner));
-        if (net == null) return;
-        for (EndpointRef ref : new ArrayList<>(net.endpoints)) {
-            WorldServer ws = DimensionManager.getWorld(ref.dim < 0 ? 0 : ref.dim);
+    private void renameAllEndpoints(String oldLabel, String newLabel, UUID owner) {
+        for (WorldServer ws : DimensionManager.getWorlds()) {
             if (ws == null || ws.isRemote) continue;
-            TileEntity te = ws.getTileEntity(ref.x, ref.y, ref.z);
-            if (te instanceof com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) {
-                ((com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) te).applyLabel(newLabel);
+            for (Object o : ws.loadedTileEntityList.toArray()) {
+                if (!(o instanceof com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile)) continue;
+                com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile t =
+                        (com.gtnhwireless.common.wireless.LabeledWirelessTransceiverTile) o;
+                UUID tileOwner = WirelessTeamUtil.getNetworkOwnerUUID(ws, t.getPlacerId());
+                if (!owner.equals(tileOwner)) continue;
+                String tl = normalizeLabel(t.getLabelForDisplay());
+                if (oldLabel.equals(tl)) {
+                    t.applyLabel(newLabel);
+                }
             }
         }
     }
