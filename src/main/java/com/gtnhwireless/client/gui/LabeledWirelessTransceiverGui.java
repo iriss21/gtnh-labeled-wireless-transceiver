@@ -108,6 +108,11 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
      */
     private String pendingRenameOld = null;
     private String pendingRenameNew = null;
+    /**
+     * v0.5.9：重命名追踪的等待帧数。服务端拒绝重命名（如新名含非法字符）时列表回显
+     * 不会出现新名，靠超时兜底结束追踪，避免「当前」永久停留在乐观新名。
+     */
+    private int pendingTicks = 0;
     /** 列表滚动偏移（基于 filteredList）。 */
     private int scrollOffset = 0;
     /**
@@ -195,25 +200,28 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
                 clampScroll();
             }
         } else if (button == this.renameButton) {
-            if (selectedLabel != null) {
+            // v0.5.9：未选中列表项时回退到「当前」频道（用户直接改标签框点重命名也能生效）
+            String target = selectedLabel != null ? selectedLabel : localCurrentLabel;
+            if (target != null && !target.isEmpty()) {
                 String newLabel = this.labelField.getText().trim();
-                if (!newLabel.isEmpty() && !newLabel.equals(selectedLabel)) {
+                if (!newLabel.isEmpty() && !newLabel.equals(target)) {
                     // 仅当被重命名的频道正是本收发器当前标签时，才乐观更新"当前"显示
                     // （重命名其他频道不会改变本收发器的标签；无条件更新会闪烁错误名称）。
-                    boolean wasCurrent = selectedLabel.equals(localCurrentLabel);
+                    boolean wasCurrent = target.equals(localCurrentLabel);
                     SetLabelC2SPacket.sendChannelAction(
                             SetLabelC2SPacket.ACTION_RENAME,
-                            tile.xCoord, tile.yCoord, tile.zCoord, selectedLabel, newLabel);
+                            tile.xCoord, tile.yCoord, tile.zCoord, target, newLabel);
                     // v0.5.5：登记重命名追踪，防止旧回显/旧描述包把「当前」打回旧名
-                    this.pendingRenameOld = selectedLabel;
+                    this.pendingRenameOld = target;
                     this.pendingRenameNew = newLabel;
+                    this.pendingTicks = 0;
                     // v0.5.8：收藏状态跟随新名（服务端回显也会纠正，本地先行保证即时排序）
-                    if (favoriteSet.contains(selectedLabel)) {
-                        favoriteSet.remove(selectedLabel);
+                    if (favoriteSet.contains(target)) {
+                        favoriteSet.remove(target);
                         favoriteSet.add(newLabel);
                     }
                     if (!channelList.contains(newLabel)) {
-                        int idx = channelList.indexOf(selectedLabel);
+                        int idx = channelList.indexOf(target);
                         if (idx >= 0) channelList.set(idx, newLabel);
                         else channelList.add(newLabel);
                     }
@@ -386,14 +394,30 @@ public class LabeledWirelessTransceiverGui extends GuiContainer {
         this.favoriteButton.enabled = selectedLabel != null;
         this.deleteButton.enabled = selectedLabel != null && !favoriteSet.contains(selectedLabel);
 
-        // v0.5.5：重命名追踪——先依据权威频道列表判断重命名是否成功。
-        // 新名已出现在列表中 = 服务端已确认重命名（忽略旧名来源的覆盖，等待新名回显）；
-        // 新名未出现 = 重命名失败（如目标名已占用），清除追踪并接受回显纠正回旧状态。
+        // v0.5.5/v0.5.9：重命名追踪——依据权威频道列表判断重命名结果。
+        // 成功 = 新名已出现在列表且旧名消失 → 保留追踪，等待新名回显/描述包确认；
+        // 失败（目标名已占用）= 旧名仍在列表且新名本就在列表 → 立即结束追踪，接受回显纠正回旧名；
+        // 未决（回显未到 / 服务端拒绝如非法名）= 新名未出现 → 40 帧（≈2 秒）超时兜底结束追踪，
+        // 否则「当前」会永久停留在乐观新名（服务端实际未改名）。
         boolean renamePending = pendingRenameNew != null;
-        if (renamePending && !ChannelListS2CPacket.LATEST.contains(pendingRenameNew)) {
-            pendingRenameOld = null;
-            pendingRenameNew = null;
-            renamePending = false;
+        if (renamePending) {
+            boolean oldInList = ChannelListS2CPacket.LATEST.contains(pendingRenameOld);
+            boolean newInList = ChannelListS2CPacket.LATEST.contains(pendingRenameNew);
+            if (oldInList && newInList) {
+                pendingRenameOld = null;
+                pendingRenameNew = null;
+                renamePending = false;
+            } else if (!newInList) {
+                if (++pendingTicks > 40) {
+                    pendingRenameOld = null;
+                    pendingRenameNew = null;
+                    renamePending = false;
+                }
+            } else {
+                pendingTicks = 0;
+            }
+        } else {
+            pendingTicks = 0;
         }
 
         // 来源 3：方块实体描述包同步——仅当值发生变化时采纳（新鲜同步，含真实清除），
