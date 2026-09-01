@@ -16,6 +16,8 @@ gtnhlabeledwireless.gui.lock=Lock
 gtnhlabeledwireless.gui.unlock=Unlock
 gtnhlabeledwireless.gui.locked_status=Locked: wrench cannot dismantle
 gtnhlabeledwireless.gui.unlocked_status=Unlocked
+gtnhlabeledwireless.gui.favorite=Favorite
+gtnhlabeledwireless.gui.unfavorite=Unfavorite
 gtnhlabeledwireless.chat.locked=Locked, cannot be dismantled with a wrench
 
 # Search (v0.5.2)
