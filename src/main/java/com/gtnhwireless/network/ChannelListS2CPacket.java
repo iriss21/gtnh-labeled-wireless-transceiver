@@ -30,12 +30,19 @@ public class ChannelListS2CPacket implements IMessage {
     public static volatile List<String> LATEST = new ArrayList<>();
 
     /**
+     * 客户端静态缓存：最近一次收到的收藏频道名集合（v0.5.8）。
+     * 与 {@link #LATEST} 平行（同一包携带）；GUI 用它排序置顶 + 禁用删除 + 画星标。
+     */
+    public static volatile java.util.Set<String> LATEST_FAVORITES = new java.util.HashSet<>();
+
+    /**
      * 客户端静态缓存：最近一次收到的“某收发器当前标签”权威回显。
      * GUI 消费一次后即置 null（避免过期回显反复覆盖新状态）。
      */
     public static volatile CurrentLabel LATEST_CURRENT = null;
 
     private List<String> channels = new ArrayList<>();
+    private List<Boolean> favorites = null;
     private CurrentLabel current = null;
 
     public ChannelListS2CPacket() {}
@@ -54,11 +61,28 @@ public class ChannelListS2CPacket implements IMessage {
         this.current = new CurrentLabel(x, y, z, currentLabel);
     }
 
+    /**
+     * 带当前标签回显 + 收藏状态列表的构造（v0.5.8）。
+     * favorites 与 channels 一一对应（favorite == true 表示该频道已收藏）；
+     * 传 null 表示不带收藏信息（旧调用方保持兼容）。
+     */
+    public ChannelListS2CPacket(List<String> channels, List<Boolean> favorites, int x, int y, int z, String currentLabel) {
+        this.channels = channels;
+        this.favorites = favorites;
+        this.current = new CurrentLabel(x, y, z, currentLabel);
+    }
+
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeShort(channels.size());
         for (String s : channels) {
             writeStr(buf, s);
+        }
+        buf.writeBoolean(favorites != null);
+        if (favorites != null) {
+            for (Boolean f : favorites) {
+                buf.writeBoolean(f != null && f);
+            }
         }
         buf.writeBoolean(current != null);
         if (current != null) {
@@ -76,6 +100,13 @@ public class ChannelListS2CPacket implements IMessage {
         for (int i = 0; i < count; i++) {
             channels.add(readStr(buf));
         }
+        favorites = null;
+        if (buf.readBoolean()) {
+            favorites = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                favorites.add(buf.readBoolean());
+            }
+        }
         if (buf.readBoolean()) {
             int x = buf.readInt();
             int y = buf.readInt();
@@ -89,6 +120,11 @@ public class ChannelListS2CPacket implements IMessage {
 
     public List<String> getChannels() {
         return channels;
+    }
+
+    /** 收藏状态列表（与 getChannels() 平行）；null 表示本包未携带收藏信息。 */
+    public List<Boolean> getFavorites() {
+        return favorites;
     }
 
     public CurrentLabel getCurrent() {
@@ -137,6 +173,20 @@ public class ChannelListS2CPacket implements IMessage {
         public IMessage onMessage(ChannelListS2CPacket msg, MessageContext ctx) {
             // 总是写入客户端静态缓存，不依赖窗口是否打开（避免首包被 openContainer 判断丢弃）
             LATEST = new ArrayList<>(msg.getChannels());
+            // v0.5.8：收藏集合同步；本包未携带收藏信息时清空（避免残留过期收藏）
+            if (msg.getFavorites() != null) {
+                java.util.Set<String> favs = new java.util.HashSet<>();
+                List<String> chans = msg.getChannels();
+                List<Boolean> favList = msg.getFavorites();
+                for (int i = 0; i < chans.size() && i < favList.size(); i++) {
+                    if (Boolean.TRUE.equals(favList.get(i))) {
+                        favs.add(chans.get(i));
+                    }
+                }
+                LATEST_FAVORITES = favs;
+            } else {
+                LATEST_FAVORITES = new java.util.HashSet<>();
+            }
             LATEST_CURRENT = msg.getCurrent();
             // 同时若窗口已打开，也更新容器（兼容旧逻辑）
             if (Minecraft.getMinecraft().thePlayer != null
