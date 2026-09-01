@@ -76,6 +76,25 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     }
 
     /**
+     * 采纳新标签而不重新注册（v0.5.11，仅频道重命名传播使用）。
+     *
+     * 与 {@link #applyLabel} 的区别：applyLabel 会 unregister + register（按当前归属派生
+     * 重新查/建网络），在归属派生不一致的时序下可能把 tile 误移到另一个同标签网络；
+     * 而频道重命名时网络对象本身不变（channel / endpoints / virtualHost 全部保留），
+     * tile 已通过 labelLink 连在该网络上，只需更新显示标签并同步即可。
+     * 因此本方法只改 labelForDisplay + 持久化 + 描述包同步，不动 frequency 与链路，
+     * 任何归属派生下都不会改变 tile 所属网络。
+     */
+    public void adoptRenamedLabel(String newLabel) {
+        if (worldObj == null || worldObj.isRemote) return;
+        if (newLabel == null) return;
+        if (newLabel.equals(this.labelForDisplay)) return;
+        this.labelForDisplay = newLabel;
+        saveChanges();
+        syncToClient();
+    }
+
+    /**
      * 恢复标签链路（节点就绪 / chunk 重载 / 服务器启动后调用）。
      *
      * v0.4.2 起只“查”不“建”：网络存在则重连；网络不存在（已被删除、或从未创建）
@@ -98,6 +117,14 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
             String renamed = reg.resolveRenamedLabel(worldObj, labelForDisplay, placerId);
             if (renamed != null) {
                 applyLabel(renamed);
+                return;
+            }
+            // v0.5.11：标签 / 别名都查不到时，按频道号找回真实网络（channel 是网络身份，
+            // 不依赖归属派生与标签表示）。命中说明 tile 仍连在该网络（如重命名传播漏改、
+            // 或注册时归属派生与当前不一致导致标签查不到）——采纳该网络当前标签并保持原网络。
+            LabelNetworkRegistry.LabelNetwork byChannel = reg.getNetworkByChannel(this.frequency);
+            if (byChannel != null) {
+                adoptRenamedLabel(byChannel.label());
                 return;
             }
             // 网络已不存在：彻底断开并清空标签（删除频道后未加载收发器重载时走到这里）。
@@ -211,6 +238,13 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
     private int reconnectCooldown;
 
     /**
+     * 标签一致性检查节流（v0.5.11）：每 100 tick（≈5 秒）按频道号核对一次
+     * labelForDisplay 与真实网络标签是否一致，不一致则采纳网络当前标签。
+     * 用于自愈「重命名传播漏改 / 归属派生漂移」导致已连接端点仍显示旧名的场景。
+     */
+    private int labelCheckTimer;
+
+    /**
      * 状态检查节流计数器（v0.4.2 TPS 优化）：方块 meta（连接指示材质）不需要每 tick
      * 全量重查网格能量——每 5 tick 或链路翻转时刷新一次，把每端点的网格查询从
      * 20 次/秒 降到 4 次/秒；连接翻转时仍立即更新，材质响应无感知延迟。
@@ -249,13 +283,30 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
                 if (renamed != null) {
                     applyLabel(renamed);
                 } else {
-                    // v0.4.2：网络已被删除（register 不再自动重建，见 refreshLabel）——
-                    // 自动重连无意义，清空标签彻底断开，避免残留“有标签但连不上”的中间态。
-                    clearLabel();
+                    // v0.5.11：别名查不到时按频道号找回真实网络（channel 是网络身份，
+                    // 不依赖归属派生），命中则采纳其当前标签并保持原网络，避免误清空。
+                    LabelNetworkRegistry.LabelNetwork byChannel = LabelNetworkRegistry.get(worldObj)
+                            .getNetworkByChannel(this.frequency);
+                    if (byChannel != null) {
+                        adoptRenamedLabel(byChannel.label());
+                    } else {
+                        // v0.4.2：网络已被删除（register 不再自动重建，见 refreshLabel）——
+                        // 自动重连无意义，清空标签彻底断开，避免残留“有标签但连不上”的中间态。
+                        clearLabel();
+                    }
                 }
             }
         }
         wasConnected = connected;
+
+        // v0.5.11：周期性标签一致性核对（每 100 tick ≈ 5 秒）。
+        // 重命名传播按频道号/端点表覆盖所有已加载端点，但此前漏改 / 归属派生漂移的
+        // 已连接端点不会走上面的重连分支，需要主动核对：labelForDisplay 与其真实网络
+        // （频道号唯一确定）标签不一致时，采纳网络当前标签自愈。
+        if (++labelCheckTimer >= 100) {
+            labelCheckTimer = 0;
+            reconcileLabelWithChannel();
+        }
 
         // TPS 节流：非翻转状态下每 5 tick 才重查一次方块状态；翻转立即刷新。
         if (flipped || ++stateTimer >= 5) {
@@ -271,6 +322,25 @@ public class LabeledWirelessTransceiverTile extends AbstractWirelessTile {
         appeng.api.networking.IGrid grid = node.getGrid();
         if (grid == null) return;
         grid.postEvent(new appeng.api.networking.events.MENetworkCellArrayUpdate());
+    }
+
+    /**
+     * v0.5.11：按频道号核对本端点的显示标签与真实网络标签是否一致，不一致则采纳网络当前标签。
+     *
+     * channel 是网络的唯一身份（单调分配、不复用、重命名不变），比标签字符串与归属派生
+     * 都权威：本端点 frequency 指向的网络，就是它实际所在的网络。若网络已被重命名而本端点
+     * 显示旧名（传播漏改 / 归属派生漂移），此处直接采纳网络当前标签，保持原网络与频道不变，
+     * 且不依赖 ServerUtilities 队伍查询的时序一致性。
+     */
+    private void reconcileLabelWithChannel() {
+        if (worldObj == null || worldObj.isRemote) return;
+        if (frequency <= 0) return;
+        LabelNetworkRegistry reg = LabelNetworkRegistry.get(worldObj);
+        LabelNetworkRegistry.LabelNetwork net = reg.getNetworkByChannel(frequency);
+        if (net == null || net.isDeleted()) return;
+        String current = LabelNetworkRegistry.normalizeLabel(labelForDisplay);
+        if (net.label().equals(current)) return; // 一致
+        adoptRenamedLabel(net.label());
     }
 
     @Override
