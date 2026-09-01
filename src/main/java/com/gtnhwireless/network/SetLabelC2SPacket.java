@@ -75,19 +75,22 @@ public class SetLabelC2SPacket implements IMessage {
         private static void syncChannelList(World world, EntityPlayerMP player,
                                             LabeledWirelessTransceiverTile tile) {
             java.util.List<String> names = new java.util.ArrayList<>();
+            java.util.List<java.lang.Boolean> favorites = new java.util.ArrayList<>();
             for (LabelNetworkRegistry.LabelNetworkSnapshot s :
                     LabelNetworkRegistry.get(world).listNetworks(world, tile.getPlacerId())) {
                 names.add(s.label);
+                favorites.add(s.favorite);
             }
             PacketHandler.INSTANCE.sendTo(new ChannelListS2CPacket(
-                    names, tile.xCoord, tile.yCoord, tile.zCoord, tile.getLabelForDisplay()), player);
+                    names, favorites, tile.xCoord, tile.yCoord, tile.zCoord, tile.getLabelForDisplay()), player);
         }
     }
 
-    /** 频道管理操作类型（删除/重命名/锁定切换），与 {@link ChannelActionC2SPacket} 保持一致。 */
+    /** 频道管理操作类型（删除/重命名/锁定切换/收藏切换），与 {@link ChannelActionC2SPacket} 保持一致。 */
     public static final int ACTION_DELETE = ChannelActionC2SPacket.ACTION_DELETE;
     public static final int ACTION_RENAME = ChannelActionC2SPacket.ACTION_RENAME;
     public static final int ACTION_TOGGLE_LOCK = ChannelActionC2SPacket.ACTION_TOGGLE_LOCK;
+    public static final int ACTION_TOGGLE_FAVORITE = ChannelActionC2SPacket.ACTION_TOGGLE_FAVORITE;
 
     /**
      * 便捷发送方法：由 GUI 调用，内部构造并发送 {@link ChannelActionC2SPacket}，
