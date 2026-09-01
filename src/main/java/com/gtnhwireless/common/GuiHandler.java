@@ -34,15 +34,17 @@ public class GuiHandler implements IGuiHandler {
             List<LabelNetworkRegistry.LabelNetworkSnapshot> snapshots =
                     LabelNetworkRegistry.get(world).listNetworks(world, tile.getPlacerId());
             List<String> names = new ArrayList<>();
+            List<Boolean> favorites = new ArrayList<>();
             for (LabelNetworkRegistry.LabelNetworkSnapshot s : snapshots) {
                 names.add(s.label);
+                favorites.add(s.favorite);
             }
             container.channelList = names;
 
             // Send channel list + current label echo to client
             if (player instanceof EntityPlayerMP) {
                 PacketHandler.INSTANCE.sendTo(new ChannelListS2CPacket(
-                        names, x, y, z, tile.getLabelForDisplay()), (EntityPlayerMP) player);
+                        names, favorites, x, y, z, tile.getLabelForDisplay()), (EntityPlayerMP) player);
             }
 
             return container;
